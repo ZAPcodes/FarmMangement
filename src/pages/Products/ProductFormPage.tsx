@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ProductWithDetails } from "@/types/database.types";
+import { ProductWithDetails, ProductStatus } from "@/types/database.types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,7 +122,7 @@ const ProductFormPage = () => {
         stock: parseInt(stock),
         category_id: categoryId ? parseInt(categoryId) : null,
         image_url: imageUrl || null,
-        status: isEditing ? undefined : "Pending", // Only set status on new products
+        status: isEditing ? undefined : "Pending" as ProductStatus, // Type cast to ProductStatus
       };
 
       if (isEditing && id) {
@@ -130,7 +130,7 @@ const ProductFormPage = () => {
         const { error } = await supabase
           .from("products")
           .update(productData)
-          .eq("product_id", id);
+          .eq("product_id", parseInt(id));
 
         if (error) throw error;
 
@@ -264,7 +264,7 @@ const ProductFormPage = () => {
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {categories.map((category) => (
                     <SelectItem 
                       key={category.category_id} 

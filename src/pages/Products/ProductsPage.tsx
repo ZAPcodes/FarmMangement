@@ -201,7 +201,7 @@ const ProductsPage = () => {
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Categories</SelectItem>
+                  <SelectItem value="all">All Categories</SelectItem>
                   {categories.map((category) => (
                     <SelectItem key={category.category_id} value={category.category_id.toString()}>
                       {category.name}
@@ -216,7 +216,7 @@ const ProductsPage = () => {
                     <SelectValue placeholder="All Statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="Approved">Approved</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Rejected">Rejected</SelectItem>
