@@ -14,6 +14,10 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import DashboardRouter from "./pages/Dashboard/DashboardRouter";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import ProductsPage from "./pages/Products/ProductsPage";
+import ProductFormPage from "./pages/Products/ProductFormPage";
+import OrdersPage from "./pages/Orders/OrdersPage";
+import ProfilePage from "./pages/Profile/ProfilePage";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +38,11 @@ const App = () => (
             <Route element={<ProtectedRoute />}>
               <Route element={<DashboardLayout />}>
                 <Route path="/dashboard" element={<DashboardRouter />} />
+                <Route path="/products" element={<ProductsPage />} />
+                <Route path="/products/new" element={<ProductFormPage />} />
+                <Route path="/products/:id" element={<ProductFormPage />} />
+                <Route path="/orders" element={<OrdersPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
                 {/* Add more protected routes here */}
               </Route>
             </Route>

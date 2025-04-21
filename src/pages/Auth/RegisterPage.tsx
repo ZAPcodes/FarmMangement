@@ -106,6 +106,7 @@ const RegisterPage = () => {
                 <SelectContent>
                   <SelectItem value="Farmer">Farmer</SelectItem>
                   <SelectItem value="Buyer">Buyer</SelectItem>
+                  <SelectItem value="Admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>
