@@ -14,12 +14,21 @@ import {
   ShoppingCart, 
   Package, 
   Search,
-  Star 
+  Star,
+  AlertTriangle
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ProductWithDetails, OrderWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const BuyerDashboard = () => {
   const { profile } = useAuth();
@@ -27,12 +36,43 @@ const BuyerDashboard = () => {
   const [recentOrders, setRecentOrders] = useState<OrderWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [cart, setCart] = useState<Map<number, { product: ProductWithDetails, quantity: number }>>(new Map());
+  const [showCartDialog, setShowCartDialog] = useState(false);
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<ProductWithDetails | null>(null);
+  const [rating, setRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState("");
 
   useEffect(() => {
     if (profile) {
       fetchBuyerData();
+      // Load cart from local storage
+      const savedCart = localStorage.getItem(`cart-${profile.id}`);
+      if (savedCart) {
+        try {
+          const parsedCart = JSON.parse(savedCart);
+          const cartMap = new Map();
+          Object.keys(parsedCart).forEach(key => {
+            cartMap.set(parseInt(key), parsedCart[key]);
+          });
+          setCart(cartMap);
+        } catch (error) {
+          console.error("Error parsing cart from localStorage:", error);
+        }
+      }
     }
   }, [profile]);
+
+  // Save cart to local storage whenever it changes
+  useEffect(() => {
+    if (profile && cart.size > 0) {
+      const cartObj: Record<string, any> = {};
+      cart.forEach((value, key) => {
+        cartObj[key] = value;
+      });
+      localStorage.setItem(`cart-${profile.id}`, JSON.stringify(cartObj));
+    }
+  }, [cart, profile]);
 
   const fetchBuyerData = async () => {
     setIsLoading(true);
@@ -91,6 +131,224 @@ const BuyerDashboard = () => {
       title: "Search functionality",
       description: `Searching for "${searchQuery}"...`,
     });
+  };
+
+  const addToCart = (product: ProductWithDetails) => {
+    if (!product.stock) {
+      toast({
+        title: "Product out of stock",
+        description: "This product is currently unavailable",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newCart = new Map(cart);
+    const existingItem = newCart.get(product.product_id);
+    
+    if (existingItem) {
+      if (existingItem.quantity < product.stock) {
+        newCart.set(product.product_id, { 
+          product, 
+          quantity: existingItem.quantity + 1 
+        });
+        toast({
+          title: "Cart updated",
+          description: `Added another ${product.name} to your cart`,
+        });
+      } else {
+        toast({
+          title: "Maximum stock reached",
+          description: `You cannot add more than the available stock (${product.stock})`,
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      newCart.set(product.product_id, { product, quantity: 1 });
+      toast({
+        title: "Added to cart",
+        description: `${product.name} has been added to your cart`,
+      });
+    }
+    
+    setCart(newCart);
+  };
+
+  const removeFromCart = (productId: number) => {
+    const newCart = new Map(cart);
+    newCart.delete(productId);
+    setCart(newCart);
+    
+    toast({
+      title: "Removed from cart",
+      description: "Item has been removed from your cart",
+    });
+  };
+
+  const updateQuantity = (productId: number, quantity: number) => {
+    const newCart = new Map(cart);
+    const item = newCart.get(productId);
+    
+    if (item) {
+      if (quantity <= 0) {
+        newCart.delete(productId);
+      } else if (quantity <= item.product.stock) {
+        newCart.set(productId, { ...item, quantity });
+      } else {
+        toast({
+          title: "Invalid quantity",
+          description: `You cannot add more than the available stock (${item.product.stock})`,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setCart(newCart);
+    }
+  };
+
+  const calculateTotal = () => {
+    let total = 0;
+    cart.forEach(item => {
+      total += item.product.price * item.quantity;
+    });
+    return total.toFixed(2);
+  };
+
+  const handleCheckout = async () => {
+    if (!profile) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to checkout",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (cart.size === 0) {
+      toast({
+        title: "Empty cart",
+        description: "Your cart is empty",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Create the order
+      const { data: orderData, error: orderError } = await supabase
+        .from("orders")
+        .insert({
+          buyer_id: profile.id,
+          total_price: parseFloat(calculateTotal()),
+          status_id: 1 // Assuming 1 is "Processing"
+        })
+        .select();
+
+      if (orderError) throw orderError;
+      
+      const order = orderData[0];
+      
+      // Create order items
+      const orderItems = Array.from(cart.values()).map(item => ({
+        order_id: order.order_id,
+        product_id: item.product.product_id,
+        quantity: item.quantity,
+        price_per_unit: item.product.price
+      }));
+      
+      const { error: itemsError } = await supabase
+        .from("order_items")
+        .insert(orderItems);
+        
+      if (itemsError) throw itemsError;
+      
+      // Update stock for each product
+      for (const item of cart.values()) {
+        const newStock = item.product.stock - item.quantity;
+        
+        const { error: stockError } = await supabase
+          .from("products")
+          .update({ stock: newStock })
+          .eq("product_id", item.product.product_id);
+          
+        if (stockError) throw stockError;
+      }
+      
+      // Clear cart
+      setCart(new Map());
+      localStorage.removeItem(`cart-${profile.id}`);
+      
+      toast({
+        title: "Order placed successfully",
+        description: "Thank you for your purchase!",
+      });
+      
+      // Refresh data
+      fetchBuyerData();
+      setShowCartDialog(false);
+      
+    } catch (error: any) {
+      console.error("Error during checkout:", error);
+      toast({
+        title: "Checkout failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openReviewDialog = (product: ProductWithDetails) => {
+    setSelectedProduct(product);
+    setRating(5);
+    setReviewComment("");
+    setShowReviewDialog(true);
+  };
+
+  const submitReview = async () => {
+    if (!profile || !selectedProduct) return;
+    
+    try {
+      // Add rating
+      const { error: ratingError } = await supabase
+        .from("ratings")
+        .insert({
+          buyer_id: profile.id,
+          product_id: selectedProduct.product_id,
+          rating: rating
+        });
+        
+      if (ratingError) throw ratingError;
+      
+      // Add review if comment provided
+      if (reviewComment.trim()) {
+        const { error: reviewError } = await supabase
+          .from("reviews")
+          .insert({
+            buyer_id: profile.id,
+            product_id: selectedProduct.product_id,
+            comment: reviewComment.trim()
+          });
+          
+        if (reviewError) throw reviewError;
+      }
+      
+      toast({
+        title: "Review submitted",
+        description: "Thank you for your feedback!",
+      });
+      
+      setShowReviewDialog(false);
+      
+    } catch (error: any) {
+      console.error("Error submitting review:", error);
+      toast({
+        title: "Review submission failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   if (isLoading) {
@@ -162,6 +420,17 @@ const BuyerDashboard = () => {
         </Card>
       </div>
 
+      {/* Cart button */}
+      <div className="flex justify-end">
+        <Button 
+          onClick={() => setShowCartDialog(true)} 
+          className="bg-green-600 hover:bg-green-700"
+        >
+          <ShoppingCart className="h-4 w-4 mr-2" />
+          Cart ({Array.from(cart.values()).reduce((sum, item) => sum + item.quantity, 0)} items)
+        </Button>
+      </div>
+
       {/* Featured products */}
       <Card>
         <CardHeader className="flex items-center justify-between">
@@ -202,7 +471,29 @@ const BuyerDashboard = () => {
                       <span>4.5</span>
                     </div>
                   </div>
-                  <Button className="w-full bg-green-600 hover:bg-green-700">Add to Cart</Button>
+                  
+                  {product.stock && product.stock < 10 && (
+                    <div className="flex items-center text-amber-600 text-xs mb-2">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      <span>Low stock! Only {product.stock} left</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      onClick={() => addToCart(product)}
+                      disabled={!product.stock}
+                    >
+                      Add to Cart
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => openReviewDialog(product)}
+                    >
+                      Rate
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -266,6 +557,149 @@ const BuyerDashboard = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Cart Dialog */}
+      <Dialog open={showCartDialog} onOpenChange={setShowCartDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Your Shopping Cart</DialogTitle>
+            <DialogDescription>
+              Review your items before checkout
+            </DialogDescription>
+          </DialogHeader>
+          
+          {cart.size > 0 ? (
+            <>
+              <div className="space-y-4 max-h-[60vh] overflow-auto">
+                {Array.from(cart.entries()).map(([productId, item]) => (
+                  <div key={productId} className="flex items-center justify-between border-b pb-4">
+                    <div className="flex items-center">
+                      <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center mr-4">
+                        {item.product.image_url ? (
+                          <img 
+                            src={item.product.image_url} 
+                            alt={item.product.name} 
+                            className="w-full h-full object-cover rounded"
+                          />
+                        ) : (
+                          <Package className="h-8 w-8 text-gray-400" />
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-medium">{item.product.name}</h3>
+                        <p className="text-sm text-gray-500">${item.product.price} each</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => updateQuantity(productId, item.quantity - 1)}
+                        className="h-8 w-8 p-0"
+                      >
+                        -
+                      </Button>
+                      <span className="mx-2">{item.quantity}</span>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => updateQuantity(productId, item.quantity + 1)}
+                        className="h-8 w-8 p-0"
+                      >
+                        +
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => removeFromCart(productId)}
+                        className="ml-4 text-red-500"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="pt-4 border-t">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="font-medium">Total:</span>
+                  <span className="text-xl font-bold">${calculateTotal()}</span>
+                </div>
+                <Button 
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={handleCheckout}
+                >
+                  Checkout
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-10">
+              <ShoppingCart className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500">Your cart is empty</p>
+              <Button 
+                className="mt-4 bg-green-600 hover:bg-green-700"
+                onClick={() => setShowCartDialog(false)}
+              >
+                Continue Shopping
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Review Dialog */}
+      <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rate & Review</DialogTitle>
+            <DialogDescription>
+              {selectedProduct?.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Your Rating</label>
+              <div className="flex items-center mt-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Star 
+                    key={star}
+                    className={`h-8 w-8 cursor-pointer ${
+                      star <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
+                    }`}
+                    onClick={() => setRating(star)}
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium">Your Review (Optional)</label>
+              <textarea
+                className="w-full mt-2 p-2 border rounded-md"
+                rows={4}
+                placeholder="Share your experience with this product..."
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReviewDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-green-600 hover:bg-green-700"
+              onClick={submitReview}
+            >
+              Submit Review
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

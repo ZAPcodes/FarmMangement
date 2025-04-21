@@ -28,7 +28,8 @@ import {
   XCircle,
   BarChart3,
   Bell,
-  Filter
+  Filter,
+  AlertTriangle
 } from "lucide-react";
 import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
@@ -40,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 const AdminDashboard = () => {
   const { profile } = useAuth();
@@ -47,6 +49,7 @@ const AdminDashboard = () => {
   const [recentUsers, setRecentUsers] = useState<Profile[]>([]);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   const [allProducts, setAllProducts] = useState<ProductWithDetails[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<ProductWithDetails[]>([]);
   const [recentOrders, setRecentOrders] = useState<OrderWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState("overview");
@@ -63,6 +66,7 @@ const AdminDashboard = () => {
     totalOrders: 0,
     salesAmount: 0,
     pendingApprovals: 0,
+    lowStockCount: 0,
     popularProducts: []
   });
 
@@ -100,7 +104,12 @@ const AdminDashboard = () => {
         .order("created_at", { ascending: false });
 
       if (allProductsError) throw allProductsError;
-      setAllProducts(allProductsData as unknown as ProductWithDetails[] || []);
+      const products = allProductsData as unknown as ProductWithDetails[] || [];
+      setAllProducts(products);
+      
+      // Find low stock products (less than 10)
+      const lowStock = products.filter(p => p.stock !== null && p.stock < 10 && p.status === "Approved");
+      setLowStockProducts(lowStock);
 
       // Fetch recent users
       const { data: usersData, error: usersError } = await supabase
@@ -155,6 +164,7 @@ const AdminDashboard = () => {
         totalOrders: orderCount || 0,
         salesAmount: orderData?.reduce((sum, order) => sum + Number(order.total_price), 0) || 0,
         pendingApprovals: productsData?.length || 0,
+        lowStockCount: lowStock.length,
         popularProducts: []
       });
     } catch (error: any) {
@@ -188,6 +198,11 @@ const AdminDashboard = () => {
       setAllProducts(allProducts.map(p => 
         p.product_id === productId ? { ...p, status: "Approved" } : p
       ));
+      
+      // Update low stock products if applicable
+      if (product && product.stock < 10) {
+        setLowStockProducts([...lowStockProducts, {...product, status: "Approved" as const}]);
+      }
       
       // Log activity
       if (product?.farmer?.id) {
@@ -353,6 +368,61 @@ const AdminDashboard = () => {
             </Card>
           </div>
 
+          {/* Low Stock Alert */}
+          {lowStockProducts.length > 0 && (
+            <Card className="border-amber-200 bg-amber-50">
+              <CardHeader className="flex flex-row items-center pb-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600 mr-2" />
+                <CardTitle className="text-amber-800">Low Stock Alert</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {lowStockProducts.slice(0, 3).map((product) => (
+                    <div key={product.product_id} className="flex justify-between items-center p-3 bg-white rounded-md border border-amber-200">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3">
+                          {product.image_url ? (
+                            <img 
+                              src={product.image_url} 
+                              alt={product.name} 
+                              className="w-full h-full object-cover rounded"
+                            />
+                          ) : (
+                            <Package className="h-5 w-5 text-gray-400" />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-medium text-sm">{product.name}</h3>
+                          <p className="text-xs text-amber-600">Only {product.stock} left in stock</p>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => viewProductDetails(product)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  ))}
+                  
+                  {lowStockProducts.length > 3 && (
+                    <Button 
+                      variant="link" 
+                      onClick={() => {
+                        setSelectedTab("products");
+                        setProductStatusFilter("Approved");
+                      }}
+                      className="text-amber-700"
+                    >
+                      View all {lowStockProducts.length} low stock products
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Pending products approval */}
           <Card>
             <CardHeader>
@@ -422,9 +492,17 @@ const AdminDashboard = () => {
 
           {/* Recent users */}
           <Card>
-            <CardHeader>
-              <CardTitle>Recent Users</CardTitle>
-              <CardDescription>Recently joined users</CardDescription>
+            <CardHeader className="flex justify-between items-center">
+              <div>
+                <CardTitle>Recent Users</CardTitle>
+                <CardDescription>Recently joined users</CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => setSelectedTab("users")}
+              >
+                View All Users
+              </Button>
             </CardHeader>
             <CardContent>
               {recentUsers.length > 0 ? (
@@ -574,7 +652,7 @@ const AdminDashboard = () => {
                       <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Statuses</SelectItem>
+                      <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="Approved">Approved</SelectItem>
                       <SelectItem value="Pending">Pending</SelectItem>
                       <SelectItem value="Rejected">Rejected</SelectItem>
@@ -600,7 +678,16 @@ const AdminDashboard = () => {
                     <tbody>
                       {filteredProducts.map((product) => (
                         <tr key={product.product_id} className="border-b">
-                          <td className="py-3 text-sm font-medium">{product.name}</td>
+                          <td className="py-3 text-sm font-medium">
+                            <div className="flex items-center">
+                              {product.name}
+                              {product.stock !== null && product.stock < 10 && product.status === "Approved" && (
+                                <Badge className="ml-2 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                                  Low Stock
+                                </Badge>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3 text-sm">{product.category?.name || "Uncategorized"}</td>
                           <td className="py-3 text-sm">${product.price}</td>
                           <td className="py-3 text-sm">{product.stock}</td>
@@ -756,7 +843,14 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-500">Stock</h4>
-                  <p>{productDetails.stock} units</p>
+                  <div className="flex items-center">
+                    <span className="mr-2">{productDetails.stock} units</span>
+                    {productDetails.stock !== null && productDetails.stock < 10 && productDetails.status === "Approved" && (
+                      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        Low Stock
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-500">Status</h4>
