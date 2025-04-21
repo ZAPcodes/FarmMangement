@@ -31,6 +31,13 @@ import {
 import { Search, Filter, ShoppingCart } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
+// Helper function to get status name safely
+const getStatusName = (status: OrderWithDetails['status']) => {
+  if (!status) return "Unknown";
+  if (typeof status === 'string') return status;
+  return status.name || "Unknown";
+};
+
 const OrdersPage = () => {
   const { profile } = useAuth();
   const { toast } = useToast();
@@ -50,8 +57,9 @@ const OrdersPage = () => {
         .from("orders")
         .select(`
           *,
-          products(name, product_id),
-          profiles(name, id)
+          product:products(name, product_id),
+          buyer:profiles(name, id),
+          status:order_status(*)
         `);
 
       if (profile?.role === "Farmer") {
@@ -64,7 +72,7 @@ const OrdersPage = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setOrders(data as OrderWithDetails[] || []);
+      setOrders(data as unknown as OrderWithDetails[] || []);
     } catch (error: any) {
       console.error("Error fetching orders:", error);
       toast({
@@ -79,8 +87,8 @@ const OrdersPage = () => {
 
   const filteredOrders = orders.filter(order => {
     // Check if the properties exist before filtering
-    const productName = order.products?.name || order.product?.name || '';
-    const orderStatus = order.status || '';
+    const productName = order.product?.name || '';
+    const orderStatus = getStatusName(order.status) || '';
     
     const nameMatch = productName.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = statusFilter ? orderStatus === statusFilter : true;
@@ -149,7 +157,7 @@ const OrdersPage = () => {
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="Pending">Pending</SelectItem>
                   <SelectItem value="Processing">Processing</SelectItem>
                   <SelectItem value="Shipped">Shipped</SelectItem>
@@ -188,13 +196,13 @@ const OrdersPage = () => {
                   {filteredOrders.map((order) => (
                     <TableRow key={order.order_id}>
                       <TableCell>{order.order_id}</TableCell>
-                      <TableCell>{order.products?.name || order.product?.name || 'N/A'}</TableCell>
-                      <TableCell>{order.profiles?.name || order.buyer?.name || 'N/A'}</TableCell>
+                      <TableCell>{order.product?.name || 'N/A'}</TableCell>
+                      <TableCell>{order.buyer?.name || 'N/A'}</TableCell>
                       <TableCell>{order.created_at}</TableCell>
-                      <TableCell>{order.total_amount || order.total_price || 0}</TableCell>
+                      <TableCell>{order.total_price || 0}</TableCell>
                       <TableCell>
-                        <Badge className={getStatusBadgeColor(order.status || null)}>
-                          {order.status || 'Unknown'}
+                        <Badge className={getStatusBadgeColor(getStatusName(order.status))}>
+                          {getStatusName(order.status)}
                         </Badge>
                       </TableCell>
                       {/* Add more cells as needed */}

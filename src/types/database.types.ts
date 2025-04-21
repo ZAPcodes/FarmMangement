@@ -24,7 +24,7 @@ export type OrderWithDetails = Order & {
   profiles?: Partial<Profile>;
   product?: Partial<Product>;
   buyer?: Partial<Profile>;
-  // Change the status type from string to object matching OrderStatus
+  // Use a more specific type for status that supports both string and object representation
   status?: Partial<OrderStatus> | string;
   total_amount?: number;
 };

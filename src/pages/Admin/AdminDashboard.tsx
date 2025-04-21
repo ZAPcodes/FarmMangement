@@ -62,6 +62,13 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
+// Helper function to get status name safely
+const getStatusName = (status: OrderWithDetails['status']) => {
+  if (!status) return "Unknown";
+  if (typeof status === 'string') return status;
+  return status.name || "Unknown";
+};
+
 const AdminDashboard = () => {
   const { profile } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -108,10 +115,11 @@ const AdminDashboard = () => {
         .select(`
           *,
           product:products(*),
-          buyer:profiles(*)
+          buyer:profiles(*),
+          status:order_status(*)
         `);
       if (ordersError) throw ordersError;
-      setOrders(ordersData as OrderWithDetails[]);
+      setOrders(ordersData as unknown as OrderWithDetails[]);
 
       // Calculate stats
       const pending = productsData?.filter(product => product.status === "Pending")?.length || 0;
@@ -147,7 +155,7 @@ const AdminDashboard = () => {
 
   const filteredOrders = orders.filter(order => {
     if (!orderFilter) return true;
-    return order.status === orderFilter;
+    return getStatusName(order.status) === orderFilter;
   });
 
   if (isLoading) {
@@ -235,7 +243,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Approved">Approved</SelectItem>
                     <SelectItem value="Rejected">Rejected</SelectItem>
@@ -292,7 +300,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Orders</SelectItem>
+                    <SelectItem value="all">All Orders</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Processing">Processing</SelectItem>
                     <SelectItem value="Shipped">Shipped</SelectItem>
@@ -324,7 +332,7 @@ const AdminDashboard = () => {
                         <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
                         <TableCell>{formatDate(order.created_at)}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{order.status || "N/A"}</Badge>
+                          <Badge variant="secondary">{getStatusName(order.status)}</Badge>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -351,7 +359,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Roles</SelectItem>
+                    <SelectItem value="all">All Roles</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="Farmer">Farmer</SelectItem>
                     <SelectItem value="Buyer">Buyer</SelectItem>
