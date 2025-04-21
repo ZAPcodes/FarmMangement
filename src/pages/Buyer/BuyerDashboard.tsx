@@ -50,7 +50,10 @@ const BuyerDashboard = () => {
         .limit(6);
 
       if (productsError) throw productsError;
-      setFeaturedProducts(productsData || []);
+      
+      // Cast the returned data as ProductWithDetails[] since we've updated our type to accept
+      // partial farmer and category objects
+      setFeaturedProducts(productsData as unknown as ProductWithDetails[]);
 
       // Fetch buyer's recent orders
       const { data: ordersData, error: ordersError } = await supabase
@@ -64,7 +67,7 @@ const BuyerDashboard = () => {
         .limit(5);
 
       if (ordersError) throw ordersError;
-      setRecentOrders(ordersData || []);
+      setRecentOrders(ordersData as OrderWithDetails[] || []);
     } catch (error: any) {
       console.error("Error fetching buyer data:", error);
       toast({
