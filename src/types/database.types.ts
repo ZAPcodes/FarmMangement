@@ -20,12 +20,13 @@ export type ProductWithDetails = Product & {
 };
 
 export type OrderWithDetails = Order & {
-  products?: Partial<Product>;
-  profiles?: Partial<Profile>;
-  product?: Partial<Product>;
   buyer?: Partial<Profile>;
   // Use a more specific type for status that supports both string and object representation
   status?: Partial<OrderStatus> | string;
+  
+  // These fields might be returned from some queries but not others
+  // so we make them optional
+  product?: Partial<Product>;
   total_amount?: number;
 };
 

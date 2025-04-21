@@ -41,6 +41,7 @@ import {
   Filter,
   AlertTriangle,
   Package,
+  User,
 } from "lucide-react";
 import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
@@ -90,10 +91,11 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch users
+      // Fetch users - get all users, not just the current admin
       const { data: usersData, error: usersError } = await supabase
         .from("profiles")
         .select("*");
+      
       if (usersError) throw usersError;
       setUsers(usersData as Profile[]);
       setTotalUsers(usersData?.length || 0);
@@ -109,12 +111,11 @@ const AdminDashboard = () => {
       if (productsError) throw productsError;
       setProducts(productsData as ProductWithDetails[]);
 
-      // Fetch orders
+      // Fetch orders with proper relationship
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
           *,
-          product:products(*),
           buyer:profiles(*),
           status:order_status(*)
         `);
@@ -243,7 +244,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="">All Statuses</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Approved">Approved</SelectItem>
                     <SelectItem value="Rejected">Rejected</SelectItem>
@@ -262,6 +263,7 @@ const AdminDashboard = () => {
                       <TableHead>Price</TableHead>
                       <TableHead>Stock</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Rating</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -275,6 +277,7 @@ const AdminDashboard = () => {
                         <TableCell>
                           <Badge variant="secondary">{product.status}</Badge>
                         </TableCell>
+                        <TableCell>{product.avgRating || 0}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -300,7 +303,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Orders</SelectItem>
+                    <SelectItem value="">All Orders</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Processing">Processing</SelectItem>
                     <SelectItem value="Shipped">Shipped</SelectItem>
@@ -316,7 +319,6 @@ const AdminDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[100px]">Order ID</TableHead>
-                      <TableHead>Product</TableHead>
                       <TableHead>Buyer</TableHead>
                       <TableHead>Total Amount</TableHead>
                       <TableHead>Order Date</TableHead>
@@ -327,7 +329,6 @@ const AdminDashboard = () => {
                     {filteredOrders.map((order) => (
                       <TableRow key={order.order_id}>
                         <TableCell className="font-medium">{order.order_id}</TableCell>
-                        <TableCell>{order.product?.name || "N/A"}</TableCell>
                         <TableCell>{order.buyer?.name || "N/A"}</TableCell>
                         <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
                         <TableCell>{formatDate(order.created_at)}</TableCell>
@@ -359,7 +360,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="">All Roles</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="Farmer">Farmer</SelectItem>
                     <SelectItem value="Buyer">Buyer</SelectItem>

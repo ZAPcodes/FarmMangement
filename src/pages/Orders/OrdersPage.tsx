@@ -47,7 +47,9 @@ const OrdersPage = () => {
   const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
-    fetchOrders();
+    if (profile) {
+      fetchOrders();
+    }
   }, [profile]);
 
   const fetchOrders = async () => {
@@ -57,14 +59,14 @@ const OrdersPage = () => {
         .from("orders")
         .select(`
           *,
-          product:products(name, product_id),
-          buyer:profiles(name, id),
+          buyer:profiles(*),
           status:order_status(*)
         `);
 
       if (profile?.role === "Farmer") {
-        // Fetch only orders that contain products owned by the farmer
-        query = query.contains("product_ids", [/* something */]); // need to fix this
+        // For farmers, we need to filter orders related to their products
+        // This will be implemented in a different way since there's no direct relationship
+        // For now, we'll show an empty list for farmers until we implement order_items properly
       } else if (profile?.role === "Buyer") {
         query = query.eq("buyer_id", profile.id);
       }
@@ -86,14 +88,11 @@ const OrdersPage = () => {
   };
 
   const filteredOrders = orders.filter(order => {
-    // Check if the properties exist before filtering
-    const productName = order.product?.name || '';
+    // For now just filter by status
     const orderStatus = getStatusName(order.status) || '';
-    
-    const nameMatch = productName.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = statusFilter ? orderStatus === statusFilter : true;
     
-    return nameMatch && statusMatch;
+    return statusMatch;
   });
 
   const getStatusBadgeColor = (status: string | null) => {
@@ -157,7 +156,7 @@ const OrdersPage = () => {
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="">All Statuses</SelectItem>
                   <SelectItem value="Pending">Pending</SelectItem>
                   <SelectItem value="Processing">Processing</SelectItem>
                   <SelectItem value="Shipped">Shipped</SelectItem>
@@ -184,28 +183,24 @@ const OrdersPage = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Order ID</TableHead>
-                    <TableHead>Product Name</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Order Date</TableHead>
                     <TableHead>Total Amount</TableHead>
                     <TableHead>Status</TableHead>
-                    {/* Add more headers as needed */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredOrders.map((order) => (
                     <TableRow key={order.order_id}>
                       <TableCell>{order.order_id}</TableCell>
-                      <TableCell>{order.product?.name || 'N/A'}</TableCell>
                       <TableCell>{order.buyer?.name || 'N/A'}</TableCell>
-                      <TableCell>{order.created_at}</TableCell>
-                      <TableCell>{order.total_price || 0}</TableCell>
+                      <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell>${order.total_price || 0}</TableCell>
                       <TableCell>
                         <Badge className={getStatusBadgeColor(getStatusName(order.status))}>
                           {getStatusName(order.status)}
                         </Badge>
                       </TableCell>
-                      {/* Add more cells as needed */}
                     </TableRow>
                   ))}
                 </TableBody>

@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -15,13 +16,15 @@ import {
   CreditCard, 
   Package, 
   TrendingUp, 
-  AlertTriangle 
+  AlertTriangle,
+  Plus 
 } from "lucide-react";
 import { ProductWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
 
 const FarmerDashboard = () => {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<ProductWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalSales, setTotalSales] = useState(0);
@@ -73,6 +76,10 @@ const FarmerDashboard = () => {
     }
   };
 
+  const handleAddNewProduct = () => {
+    navigate("/products/new");
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-full">
@@ -83,9 +90,15 @@ const FarmerDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Farmer Dashboard</h1>
-        <p className="text-gray-500 mt-1">Welcome back, {profile?.name}</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Farmer Dashboard</h1>
+          <p className="text-gray-500 mt-1">Welcome back, {profile?.name}</p>
+        </div>
+        <Button onClick={handleAddNewProduct} className="bg-green-600 hover:bg-green-700">
+          <Plus className="h-4 w-4 mr-2" />
+          Add New Product
+        </Button>
       </div>
 
       {/* Stats cards */}

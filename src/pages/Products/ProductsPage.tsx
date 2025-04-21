@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Package, Plus, Search, Filter, Edit, Trash2 } from "lucide-react";
+import { Package, Plus, Search, Filter, Edit, Trash2, Star } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Select,
@@ -61,7 +62,29 @@ const ProductsPage = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setProducts(data as ProductWithDetails[] || []);
+      
+      // Fetch ratings for products
+      const productsWithRatings = await Promise.all((data || []).map(async (product) => {
+        const { data: ratingsData, error: ratingsError } = await supabase
+          .from("ratings")
+          .select("rating")
+          .eq("product_id", product.product_id);
+        
+        if (ratingsError) {
+          console.error("Error fetching ratings:", ratingsError);
+          return { ...product, avgRating: 0 };
+        }
+        
+        if (ratingsData && ratingsData.length > 0) {
+          const totalRating = ratingsData.reduce((sum, item) => sum + item.rating, 0);
+          const avgRating = totalRating / ratingsData.length;
+          return { ...product, avgRating };
+        }
+        
+        return { ...product, avgRating: 0 };
+      }));
+      
+      setProducts(productsWithRatings as ProductWithDetails[]);
     } catch (error: any) {
       console.error("Error fetching products:", error);
       toast({
@@ -276,7 +299,13 @@ const ProductsPage = () => {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <p className="text-lg font-bold">${product.price}</p>
+                      <div className="flex justify-between items-center">
+                        <p className="text-lg font-bold">${product.price}</p>
+                        <div className="flex items-center text-amber-500">
+                          <Star className="h-4 w-4 fill-current mr-1" />
+                          <span>{product.avgRating?.toFixed(1) || "0.0"}</span>
+                        </div>
+                      </div>
                       <p className="text-sm text-gray-500 line-clamp-3">
                         {product.description || "No description available."}
                       </p>
