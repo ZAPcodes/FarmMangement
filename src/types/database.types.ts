@@ -20,9 +20,12 @@ export type ProductWithDetails = Product & {
 };
 
 export type OrderWithDetails = Order & {
-  items?: (OrderItem & { product?: Product })[];
-  status?: OrderStatus;
-  buyer?: Profile;
+  products?: Partial<Product>;
+  profiles?: Partial<Profile>;
+  product?: Partial<Product>;
+  buyer?: Partial<Profile>;
+  status?: string;
+  total_amount?: number;
 };
 
 export type UserRole = Database["public"]["Enums"]["user_role"];

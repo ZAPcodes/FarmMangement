@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,7 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { 
+import {
   Table, 
   TableBody, 
   TableCell, 
@@ -57,7 +58,7 @@ const OrdersPage = () => {
         // Fetch only orders that contain products owned by the farmer
         query = query.contains("product_ids", [/* something */]); // need to fix this
       } else if (profile?.role === "Buyer") {
-        query = query.eq("profile_id", profile.id);
+        query = query.eq("buyer_id", profile.id);
       }
 
       const { data, error } = await query;
@@ -77,8 +78,13 @@ const OrdersPage = () => {
   };
 
   const filteredOrders = orders.filter(order => {
-    const nameMatch = order.products?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const statusMatch = statusFilter ? order.status === statusFilter : true;
+    // Check if the properties exist before filtering
+    const productName = order.products?.name || order.product?.name || '';
+    const orderStatus = order.status || '';
+    
+    const nameMatch = productName.toLowerCase().includes(searchTerm.toLowerCase());
+    const statusMatch = statusFilter ? orderStatus === statusFilter : true;
+    
     return nameMatch && statusMatch;
   });
 
@@ -182,13 +188,13 @@ const OrdersPage = () => {
                   {filteredOrders.map((order) => (
                     <TableRow key={order.order_id}>
                       <TableCell>{order.order_id}</TableCell>
-                      <TableCell>{order.products?.name}</TableCell>
-                      <TableCell>{order.profiles?.name}</TableCell>
+                      <TableCell>{order.products?.name || order.product?.name || 'N/A'}</TableCell>
+                      <TableCell>{order.profiles?.name || order.buyer?.name || 'N/A'}</TableCell>
                       <TableCell>{order.created_at}</TableCell>
-                      <TableCell>{order.total_amount}</TableCell>
+                      <TableCell>{order.total_amount || order.total_price || 0}</TableCell>
                       <TableCell>
-                        <Badge className={getStatusBadgeColor(order.status)}>
-                          {order.status}
+                        <Badge className={getStatusBadgeColor(order.status || null)}>
+                          {order.status || 'Unknown'}
                         </Badge>
                       </TableCell>
                       {/* Add more cells as needed */}

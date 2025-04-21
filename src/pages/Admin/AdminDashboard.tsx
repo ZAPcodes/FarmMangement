@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,7 +40,7 @@ import {
   Bell,
   Filter,
   AlertTriangle,
-  Package
+  Package,
 } from "lucide-react";
 import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
@@ -115,7 +116,7 @@ const AdminDashboard = () => {
       // Calculate stats
       const pending = productsData?.filter(product => product.status === "Pending")?.length || 0;
       const lowStock = productsData?.filter(product => product.stock < 10)?.length || 0;
-      const sales = ordersData?.reduce((acc, order) => acc + (order.total_amount || 0), 0) || 0;
+      const sales = ordersData?.reduce((acc, order) => acc + (order.total_price || 0), 0) || 0;
 
       setPendingApprovals(pending);
       setLowStockProducts(lowStock);
@@ -318,12 +319,12 @@ const AdminDashboard = () => {
                     {filteredOrders.map((order) => (
                       <TableRow key={order.order_id}>
                         <TableCell className="font-medium">{order.order_id}</TableCell>
-                        <TableCell>{order.product?.name}</TableCell>
-                        <TableCell>{order.buyer?.name}</TableCell>
-                        <TableCell>{formatCurrency(order.total_amount || 0)}</TableCell>
+                        <TableCell>{order.product?.name || "N/A"}</TableCell>
+                        <TableCell>{order.buyer?.name || "N/A"}</TableCell>
+                        <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
                         <TableCell>{formatDate(order.created_at)}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{order.status}</Badge>
+                          <Badge variant="secondary">{order.status || "N/A"}</Badge>
                         </TableCell>
                       </TableRow>
                     ))}
