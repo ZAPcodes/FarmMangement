@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -107,7 +106,9 @@ const BuyerDashboard = () => {
         .limit(5);
 
       if (ordersError) throw ordersError;
-      setRecentOrders(ordersData as OrderWithDetails[] || []);
+      
+      // Type assertion to handle the new OrderWithDetails structure
+      setRecentOrders(ordersData as unknown as OrderWithDetails[]);
     } catch (error: any) {
       console.error("Error fetching buyer data:", error);
       toast({
@@ -351,6 +352,12 @@ const BuyerDashboard = () => {
     }
   };
 
+  const getStatusName = (status: OrderWithDetails['status']) => {
+    if (!status) return "Processing";
+    if (typeof status === 'string') return status;
+    return status.name || "Processing";
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-full">
@@ -530,13 +537,13 @@ const BuyerDashboard = () => {
                       <td className="py-3 text-sm">${order.total_price}</td>
                       <td className="py-3 text-sm">
                         <span className={`px-2 py-1 rounded-full text-xs ${
-                          order.status?.name === "Delivered" ? "bg-green-100 text-green-800" : 
-                          order.status?.name === "Confirmed" ? "bg-blue-100 text-blue-800" : 
-                          order.status?.name === "Shipped" ? "bg-indigo-100 text-indigo-800" :
-                          order.status?.name === "Cancelled" ? "bg-red-100 text-red-800" :
+                          getStatusName(order.status) === "Delivered" ? "bg-green-100 text-green-800" : 
+                          getStatusName(order.status) === "Confirmed" ? "bg-blue-100 text-blue-800" : 
+                          getStatusName(order.status) === "Shipped" ? "bg-indigo-100 text-indigo-800" :
+                          getStatusName(order.status) === "Cancelled" ? "bg-red-100 text-red-800" :
                           "bg-yellow-100 text-yellow-800"
                         }`}>
-                          {order.status?.name || "Processing"}
+                          {getStatusName(order.status)}
                         </span>
                       </td>
                       <td className="py-3 text-sm text-right">
