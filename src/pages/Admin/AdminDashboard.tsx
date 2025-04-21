@@ -29,7 +29,8 @@ import {
   BarChart3,
   Bell,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  Package
 } from "lucide-react";
 import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
 import { toast } from "@/components/ui/use-toast";
