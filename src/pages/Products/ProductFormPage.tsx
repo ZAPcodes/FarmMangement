@@ -128,7 +128,7 @@ const ProductFormPage = () => {
         price: parsedProduct.price,
         stock: parsedProduct.stock,
         image_url: parsedProduct.image_url || "",
-        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Explicitly convert to string
+        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Convert number to string for form
         status: parsedProduct.status as "Approved" | "Pending" | "Rejected" || "Pending",
       });
     } catch (error: any) {
