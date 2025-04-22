@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -106,7 +107,7 @@ const ProductFormPage = () => {
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_id", productId)
+        .eq("product_id", parseInt(productId)) // Convert string to number here
         .single();
 
       if (error) throw error;
@@ -127,8 +128,8 @@ const ProductFormPage = () => {
         price: parsedProduct.price,
         stock: parsedProduct.stock,
         image_url: parsedProduct.image_url || "",
-        category_id: parsedProduct.category_id?.toString() || "",
-        status: parsedProduct.status || "Pending",
+        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Convert number to string
+        status: parsedProduct.status as "Approved" | "Pending" | "Rejected" || "Pending",
       });
     } catch (error: any) {
       console.error("Error fetching product:", error);
@@ -151,7 +152,7 @@ const ProductFormPage = () => {
         price: values.price,
         stock: values.stock,
         image_url: values.image_url,
-        category_id: parseInt(values.category_id),
+        category_id: parseInt(values.category_id), // Convert string to number
         status: values.status || "Pending",
       };
 
@@ -160,7 +161,7 @@ const ProductFormPage = () => {
         const { error } = await supabase
           .from("products")
           .update(formData)
-          .eq("product_id", id);
+          .eq("product_id", parseInt(id)); // Convert string to number
 
         if (error) throw error;
 
