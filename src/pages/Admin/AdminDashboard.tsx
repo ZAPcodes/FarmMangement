@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,10 +44,9 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
+import { ProductWithDetails, Profile, OrderWithDetails, ProductStatus } from "@/types/database.types";
 import { useToast } from "@/components/ui/use-toast";
 
-// Helper function to format dates
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -57,7 +55,6 @@ const formatDate = (date: string) => {
   });
 };
 
-// Helper function to format currency
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -65,7 +62,6 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-// Helper function to get status name safely
 const getStatusName = (status: OrderWithDetails['status']) => {
   if (!status) return "Unknown";
   if (typeof status === 'string') return status;
@@ -94,7 +90,6 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch users - get all users, not just the current admin
       const { data: usersData, error: usersError } = await supabase
         .from("profiles")
         .select("*");
@@ -103,7 +98,6 @@ const AdminDashboard = () => {
       setUsers(usersData as Profile[]);
       setTotalUsers(usersData?.length || 0);
 
-      // Fetch products
       const { data: productsData, error: productsError } = await supabase
         .from("products")
         .select(`
@@ -113,7 +107,6 @@ const AdminDashboard = () => {
         `);
       if (productsError) throw productsError;
       
-      // Ensure status is a valid ProductStatus enum value
       const typedProducts = productsData.map(product => {
         const typedStatus = (product.status || "Pending") as ProductStatus;
         return {
@@ -124,7 +117,6 @@ const AdminDashboard = () => {
       
       setProducts(typedProducts as ProductWithDetails[]);
 
-      // Fetch orders with proper relationship - improved query
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
@@ -139,7 +131,6 @@ const AdminDashboard = () => {
       console.log("Admin dashboard - Orders data:", ordersData);
       setOrders(ordersData as unknown as OrderWithDetails[] || []);
 
-      // Calculate stats
       const pending = typedProducts?.filter(product => product.status === "Pending")?.length || 0;
       const lowStock = typedProducts?.filter(product => product.stock < 10)?.length || 0;
       const sales = ordersData?.reduce((acc, order) => acc + (order.total_price || 0), 0) || 0;
@@ -160,7 +151,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Update product status function
   const updateProductStatus = async (productId: number, newStatus: ProductStatus) => {
     try {
       const { error } = await supabase
@@ -170,7 +160,6 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
-      // Update the local state
       setProducts(products.map(product => 
         product.product_id === productId 
           ? { ...product, status: newStatus } 
@@ -191,7 +180,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Update order status function
   const updateOrderStatus = async (orderId: number, newStatusId: number) => {
     try {
       const { error } = await supabase
@@ -201,7 +189,6 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
-      // Fetch the updated order to get the full status object
       const { data, error: fetchError } = await supabase
         .from("orders")
         .select(`
@@ -214,7 +201,6 @@ const AdminDashboard = () => {
 
       if (fetchError) throw fetchError;
 
-      // Update the local state
       setOrders(orders.map(order => 
         order.order_id === orderId ? (data as unknown as OrderWithDetails) : order
       ));
@@ -233,7 +219,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Filter functions
   const filteredUsers = users.filter(user => {
     if (userFilter === "all") return true;
     return user.role === userFilter;
@@ -318,7 +303,6 @@ const AdminDashboard = () => {
           <TabsTrigger value="users">Users</TabsTrigger>
         </TabsList>
 
-        {/* Products Tab */}
         <TabsContent value="products" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -422,7 +406,6 @@ const AdminDashboard = () => {
           </Card>
         </TabsContent>
 
-        {/* Orders Tab */}
         <TabsContent value="orders" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -505,7 +488,6 @@ const AdminDashboard = () => {
           </Card>
         </TabsContent>
 
-        {/* Users Tab */}
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">

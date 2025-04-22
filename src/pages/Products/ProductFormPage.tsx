@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -74,7 +75,7 @@ const ProductFormPage = () => {
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_id", productId)
+        .eq("product_id", parseInt(productId))
         .single();
 
       if (error) throw error;
@@ -137,7 +138,7 @@ const ProductFormPage = () => {
         const { error } = await supabase
           .from("products")
           .update(productData)
-          .eq("product_id", id);
+          .eq("product_id", parseInt(id));
 
         if (error) throw error;
 
