@@ -76,9 +76,9 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState<Profile[]>([]);
   const [products, setProducts] = useState<ProductWithDetails[]>([]);
   const [orders, setOrders] = useState<OrderWithDetails[]>([]);
-  const [userFilter, setUserFilter] = useState("");
-  const [productFilter, setProductFilter] = useState("");
-  const [orderFilter, setOrderFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("all");
+  const [productFilter, setProductFilter] = useState("all");
+  const [orderFilter, setOrderFilter] = useState("all");
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [lowStockProducts, setLowStockProducts] = useState(0);
   const [totalSales, setTotalSales] = useState(0);
@@ -146,17 +146,17 @@ const AdminDashboard = () => {
 
   // Filter functions
   const filteredUsers = users.filter(user => {
-    if (!userFilter) return true;
+    if (userFilter === "all") return true;
     return user.role === userFilter;
   });
 
   const filteredProducts = products.filter(product => {
-    if (!productFilter) return true;
+    if (productFilter === "all") return true;
     return product.status === productFilter;
   });
 
   const filteredOrders = orders.filter(order => {
-    if (!orderFilter) return true;
+    if (orderFilter === "all") return true;
     return getStatusName(order.status) === orderFilter;
   });
 
@@ -327,17 +327,25 @@ const AdminDashboard = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredOrders.map((order) => (
-                      <TableRow key={order.order_id}>
-                        <TableCell className="font-medium">{order.order_id}</TableCell>
-                        <TableCell>{order.buyer?.name || "N/A"}</TableCell>
-                        <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
-                        <TableCell>{formatDate(order.created_at)}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{getStatusName(order.status)}</Badge>
+                    {filteredOrders.length > 0 ? (
+                      filteredOrders.map((order) => (
+                        <TableRow key={order.order_id}>
+                          <TableCell className="font-medium">{order.order_id}</TableCell>
+                          <TableCell>{order.buyer?.name || "N/A"}</TableCell>
+                          <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
+                          <TableCell>{formatDate(order.created_at)}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{getStatusName(order.status)}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-4 text-gray-500">
+                          No orders found
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>

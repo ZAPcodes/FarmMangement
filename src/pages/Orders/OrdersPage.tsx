@@ -44,7 +44,7 @@ const OrdersPage = () => {
   const [orders, setOrders] = useState<OrderWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (profile) {
@@ -74,6 +74,7 @@ const OrdersPage = () => {
       const { data, error } = await query;
 
       if (error) throw error;
+      console.log("Fetched orders:", data);
       setOrders(data as unknown as OrderWithDetails[] || []);
     } catch (error: any) {
       console.error("Error fetching orders:", error);
@@ -90,7 +91,7 @@ const OrdersPage = () => {
   const filteredOrders = orders.filter(order => {
     // For now just filter by status
     const orderStatus = getStatusName(order.status) || '';
-    const statusMatch = statusFilter ? orderStatus === statusFilter : true;
+    const statusMatch = statusFilter === "all" ? true : orderStatus === statusFilter;
     
     return statusMatch;
   });
