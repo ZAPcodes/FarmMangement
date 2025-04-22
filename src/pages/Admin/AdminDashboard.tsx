@@ -112,7 +112,17 @@ const AdminDashboard = () => {
           farmer:profiles(*)
         `);
       if (productsError) throw productsError;
-      setProducts(productsData as ProductWithDetails[]);
+      
+      // Ensure status is a valid ProductStatus enum value
+      const typedProducts = productsData.map(product => {
+        const typedStatus = (product.status || "Pending") as ProductStatus;
+        return {
+          ...product,
+          status: typedStatus
+        };
+      });
+      
+      setProducts(typedProducts as ProductWithDetails[]);
 
       // Fetch orders with proper relationship - improved query
       const { data: ordersData, error: ordersError } = await supabase
@@ -130,8 +140,8 @@ const AdminDashboard = () => {
       setOrders(ordersData as unknown as OrderWithDetails[] || []);
 
       // Calculate stats
-      const pending = productsData?.filter(product => product.status === "Pending")?.length || 0;
-      const lowStock = productsData?.filter(product => product.stock < 10)?.length || 0;
+      const pending = typedProducts?.filter(product => product.status === "Pending")?.length || 0;
+      const lowStock = typedProducts?.filter(product => product.stock < 10)?.length || 0;
       const sales = ordersData?.reduce((acc, order) => acc + (order.total_price || 0), 0) || 0;
 
       setPendingApprovals(pending);
@@ -151,7 +161,7 @@ const AdminDashboard = () => {
   };
 
   // Update product status function
-  const updateProductStatus = async (productId: number, newStatus: string) => {
+  const updateProductStatus = async (productId: number, newStatus: ProductStatus) => {
     try {
       const { error } = await supabase
         .from("products")

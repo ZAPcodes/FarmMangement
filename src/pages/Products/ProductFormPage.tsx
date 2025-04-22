@@ -245,16 +245,19 @@ const ProductFormPage = () => {
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
                 <Select
-                  value={formData.category_id?.toString() || "0"}
+                  value={formData.category_id?.toString() || ""}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, category_id: parseInt(value) || null })
+                    setFormData({ 
+                      ...formData, 
+                      category_id: value === "none" ? null : parseInt(value) 
+                    })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {categories.map((category) => (
                       <SelectItem 
                         key={category.category_id} 
