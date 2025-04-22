@@ -152,8 +152,8 @@ const ProductFormPage = () => {
         price: values.price,
         stock: values.stock,
         image_url: values.image_url,
-        category_id: parseInt(values.category_id), // Convert string to number
-        status: values.status || "Pending",
+        category_id: values.category_id ? parseInt(values.category_id) : null, // Convert string to number, handle potential null
+        status: values.status || "Pending" as ProductStatus,
       };
 
       if (id) {
@@ -161,7 +161,7 @@ const ProductFormPage = () => {
         const { error } = await supabase
           .from("products")
           .update(formData)
-          .eq("product_id", parseInt(id)); // Convert string to number
+          .eq("product_id", parseInt(id)); // Ensure product_id is a number
 
         if (error) throw error;
 
