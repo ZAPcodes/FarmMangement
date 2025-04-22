@@ -72,7 +72,7 @@ const ProductFormPage = () => {
       price: 0,
       stock: 0,
       image_url: "",
-      category_id: "",
+      category_id: "", // Ensure this is a string
       status: "Pending",
     },
   });
@@ -107,7 +107,7 @@ const ProductFormPage = () => {
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_id", parseInt(productId)) // Convert string to number here
+        .eq("product_id", parseInt(productId))
         .single();
 
       if (error) throw error;
@@ -128,7 +128,7 @@ const ProductFormPage = () => {
         price: parsedProduct.price,
         stock: parsedProduct.stock,
         image_url: parsedProduct.image_url || "",
-        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Convert number to string
+        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Explicitly convert to string
         status: parsedProduct.status as "Approved" | "Pending" | "Rejected" || "Pending",
       });
     } catch (error: any) {
