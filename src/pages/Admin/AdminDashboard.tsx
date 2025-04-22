@@ -230,31 +230,104 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch orders without complex joins
+      // Fetch all products with their relationships
+      const { data: productsData, error: productsError } = await supabase
+        .from("products")
+        .select(`
+          *,
+          category:categories(*),
+          farmer:profiles(id, name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (productsError) throw productsError;
+      setProducts(productsData || []);
+
+      // Calculate metrics
+      const pendingProducts = productsData?.filter(product => product.status === "Pending").length || 0;
+      setPendingApprovals(pendingProducts);
+
+      const lowStock = productsData?.filter(product => product.stock < 10).length || 0;
+      setLowStockProducts(lowStock);
+
+      // Fetch total users
+      const { count: usersCount, error: usersError } = await supabase
+        .from("profiles")
+        .select("*", { count: 'exact', head: true });
+
+      if (usersError) throw usersError;
+      setTotalUsers(usersCount || 0);
+
+      // Fetch all users for the users table
+      const { data: usersData, error: usersFetchError } = await supabase
+        .from("profiles")
+        .select("*")
+        .order('created_at', { ascending: false });
+
+      if (usersFetchError) throw usersFetchError;
+      setUsers(usersData || []);
+
+      // Fetch orders with their items
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select('*')
+        .select(`
+          *,
+          buyer:profiles(id, name, email),
+          status:order_status(status_id, name),
+          order_items(
+            quantity,
+            price_per_unit,
+            product:products(
+              name,
+              price
+            )
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (ordersError) throw ordersError;
+      setOrders(ordersData || []);
 
-      // Fetch order items separately if needed
-      const { data: orderItemsData, error: itemsError } = await supabase
-        .from("order_items")
-        .select('*');
+      // Fetch total sales from farmer_sales
+      const { data: salesData, error: salesError } = await supabase
+        .from('farmer_sales')
+        .select('total_amount');
 
-      if (itemsError) throw itemsError;
+      if (salesError) throw salesError;
 
-      // Manually combine the data
-      const ordersWithItems = ordersData?.map(order => ({
-        ...order,
-        order_items: orderItemsData?.filter(item => item.order_id === order.order_id) || []
-      }));
+      // Calculate total sales
+      const totalAmount = salesData?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0;
+      setTotalSales(totalAmount);
 
-      setOrders(ordersWithItems || []);
+      // Fetch farmer sales with farmer details
+      const { data: farmerSalesData, error: farmerSalesError } = await supabase
+        .from('farmer_sales')
+        .select('farmer_id, total_amount, last_updated')
+        .order('total_amount', { ascending: false });
 
-      // Update other state as needed
-      setPendingApprovals(ordersWithItems?.filter(order => order.status_id === 1).length || 0);
+      if (farmerSalesError) throw farmerSalesError;
+
+      // Fetch farmer names separately
+      const farmerIds = farmerSalesData?.map(sale => sale.farmer_id) || [];
+      const { data: farmersData, error: farmersError } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', farmerIds);
+
+      if (farmersError) throw farmersError;
+
+      // Create a map of farmer IDs to names
+      const farmerNames = new Map(farmersData?.map(farmer => [farmer.id, farmer.name]));
+
+      // Format farmer sales data
+      const formattedFarmerSales = farmerSalesData?.map(sale => ({
+        farmer_id: sale.farmer_id,
+        farmer_name: farmerNames.get(sale.farmer_id) || 'Unknown Farmer',
+        total_amount: sale.total_amount || 0,
+        last_updated: sale.last_updated
+      })) || [];
+
+      setFarmerSales(formattedFarmerSales);
 
     } catch (error: any) {
       console.error("Error fetching data:", error);
@@ -268,34 +341,40 @@ const AdminDashboard = () => {
     }
   };
 
-  const updateProductStatus = async (productId: number, newStatus: ProductStatus) => {
+  const updateProductStatus = async (productId: number, newStatus: "Pending" | "Approved" | "Rejected") => {
+    setIsLoading(true);
     try {
       const { error } = await supabase
-        .from("products")
+        .from('products')
         .update({ status: newStatus })
-        .eq("product_id", productId);
+        .eq('product_id', productId);
 
-      if (error) throw error;
-
-      setProducts(products.map(product => 
-        product.product_id === productId 
-          ? { ...product, status: newStatus } 
-          : product
-      ));
+      if (error) {
+        console.error('Error updating status:', error);
+        toast({
+          title: "Error",
+          description: `Failed to update product status: ${error.message}`,
+          variant: "destructive",
+        });
+        return;
+      }
 
       toast({
-        title: "Status updated",
-        description: `Product status has been updated to ${newStatus}`,
+        title: "Success",
+        description: `Product status updated to ${newStatus}`,
       });
 
-      fetchData();
-    } catch (error: any) {
-      console.error("Error updating product status:", error);
+      // Refresh data
+      await fetchData();
+    } catch (error) {
+      console.error('Error:', error);
       toast({
-        title: "Error updating status",
-        description: error.message,
+        title: "Error",
+        description: "An unexpected error occurred while updating the product status",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -321,52 +400,91 @@ const AdminDashboard = () => {
   const updateOrderStatus = async (orderId: number, newStatusId: number) => {
     try {
       setIsLoading(true);
+      console.log(`Updating order ${orderId} to status ${newStatusId}`);
 
-      // For delivered status (4), we need to handle it in steps
-      if (newStatusId === 4) {
-        // First get the current order status
-        const { data: currentOrder, error: fetchError } = await supabase
-          .from('orders')
-          .select('status_id')
-          .eq('order_id', orderId)
-          .single();
+      // Log the order details before update
+      const { data: beforeOrder, error: beforeError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('order_id', orderId)
+        .single();
+      
+      if (beforeError) throw beforeError;
+      console.log('Order before update:', beforeOrder);
 
-        if (fetchError) throw fetchError;
+      // Check order items and their products before update
+      const { data: orderItems, error: itemsError } = await supabase
+        .from('order_items')
+        .select(`
+          item_id,
+          order_id,
+          product_id,
+          quantity,
+          price_per_unit,
+          product:products!inner(
+            product_id,
+            name,
+            farmer_id
+          )
+        `)
+        .eq('order_id', orderId);
 
-        // If already delivered, don't proceed
-        if (currentOrder?.status_id === 4) {
-          toast({
-            title: "Order already delivered",
-            description: "This order is already marked as delivered.",
-            variant: "destructive",
-          });
-          return;
+      if (itemsError) {
+        console.error('Error fetching order items:', itemsError);
+        throw itemsError;
+      }
+      console.log('Order items with products:', orderItems);
+
+      // Calculate expected farmer sales update
+      const farmerTotals = new Map();
+      orderItems?.forEach(item => {
+        const farmerId = item.product?.farmer_id;
+        if (farmerId) {
+          const total = (farmerTotals.get(farmerId) || 0) + (item.price_per_unit * item.quantity);
+          farmerTotals.set(farmerId, total);
         }
+      });
+      console.log('Expected farmer sales updates:', Object.fromEntries(farmerTotals));
 
-        // Update using a direct update without any joins
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({ status_id: newStatusId })
-          .eq('order_id', orderId);
+      // Simple direct update
+      const { data: updateData, error: updateError } = await supabase
+        .from('orders')
+        .update({ status_id: newStatusId })
+        .eq('order_id', orderId)
+        .select();
 
-        if (updateError) throw updateError;
-      } else {
-        // For non-delivered statuses, check if it was previously delivered
-        const { data: currentOrder, error: fetchError } = await supabase
-          .from('orders')
-          .select('status_id')
-          .eq('order_id', orderId)
-          .single();
+      if (updateError) throw updateError;
+      console.log('Update response:', updateData);
 
-        if (fetchError) throw fetchError;
+      // Verify the update
+      const { data: afterOrder, error: afterError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('order_id', orderId)
+        .single();
+      
+      if (afterError) throw afterError;
+      console.log('Order after update:', afterOrder);
 
-        // Update the status
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({ status_id: newStatusId })
-          .eq('order_id', orderId);
+      // Check farmer_sales after update if status is changed to delivered
+      if (newStatusId === 4) {
+        // Wait a short moment for the trigger to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        if (updateError) throw updateError;
+        const { data: farmerSalesData, error: farmerSalesError } = await supabase
+          .from('farmer_sales')
+          .select('*');
+        
+        if (farmerSalesError) throw farmerSalesError;
+        console.log('Farmer sales after delivery:', farmerSalesData);
+
+        // Check if the expected updates were applied
+        if (farmerSalesData?.length === 0) {
+          console.warn('No farmer sales records found. This might indicate an issue with:');
+          console.warn('1. The database trigger not being installed');
+          console.warn('2. The trigger not having proper permissions');
+          console.warn('3. Missing or incorrect relationships between orders, products, and farmers');
+        }
       }
 
       // Update local state
@@ -383,7 +501,7 @@ const AdminDashboard = () => {
         description: `Order #${orderId} status has been updated to ${STATUS_NAMES[newStatusId]}`,
       });
 
-      // Wait a moment for the trigger to complete, then refresh data
+      // Refresh data after a short delay to allow trigger to complete
       setTimeout(async () => {
         await fetchData();
       }, 1000);

@@ -48,11 +48,10 @@ const formSchema = z.object({
   }),
   image_url: z.string().url({
     message: "Please enter a valid URL.",
-  }),
+  }).optional(),
   category_id: z.string().min(1, {
     message: "Please select a category.",
-  }),
-  status: z.enum(["Approved", "Pending", "Rejected"]).optional(),
+  })
 });
 
 const ProductFormPage = () => {
@@ -62,6 +61,7 @@ const ProductFormPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -72,11 +72,11 @@ const ProductFormPage = () => {
       stock: 0,
       image_url: "",
       category_id: "",
-      status: "Pending",
     },
   });
 
   useEffect(() => {
+    checkUserRole();
     fetchCategories();
     if (id) {
       fetchProduct(id);
@@ -84,6 +84,49 @@ const ProductFormPage = () => {
       setIsLoading(false);
     }
   }, [id]);
+
+  const checkUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Error",
+          description: "You must be logged in to create products",
+          variant: "destructive",
+        });
+        navigate("/login");
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      if (profile?.role !== 'Farmer') {
+        toast({
+          title: "Access Denied",
+          description: "Only farmers can create or edit products",
+          variant: "destructive",
+        });
+        navigate("/products");
+        return;
+      }
+
+      setCurrentUser({ id: user.id, role: profile.role });
+    } catch (error: any) {
+      console.error("Error checking user role:", error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      navigate("/products");
+    }
+  };
 
   const fetchCategories = async () => {
     try {
@@ -125,7 +168,6 @@ const ProductFormPage = () => {
         stock: parsedProduct.stock,
         image_url: parsedProduct.image_url || "",
         category_id: parsedProduct.category_id,
-        status: parsedProduct.status as "Approved" | "Pending" | "Rejected" || "Pending",
       });
 
       setProduct(parsedProduct);
@@ -142,6 +184,15 @@ const ProductFormPage = () => {
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!currentUser?.id) {
+      toast({
+        title: "Authentication Error",
+        description: "You must be logged in to create products",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const formData = {
@@ -149,15 +200,31 @@ const ProductFormPage = () => {
         description: values.description,
         price: values.price,
         stock: values.stock,
-        image_url: values.image_url,
+        image_url: values.image_url || null,
         category_id: values.category_id ? parseInt(values.category_id) : null,
-        status: values.status || "Pending" as ProductStatus,
+        status: "Pending",
+        farmer_id: currentUser.id
       };
 
       if (id) {
+        const { data: existingProduct, error: fetchError } = await supabase
+          .from("products")
+          .select("farmer_id, status")
+          .eq("product_id", parseInt(id))
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        if (existingProduct.farmer_id !== currentUser.id) {
+          throw new Error("You can only edit your own products");
+        }
+
         const { error } = await supabase
           .from("products")
-          .update(formData)
+          .update({
+            ...formData,
+            status: existingProduct.status
+          })
           .eq("product_id", parseInt(id));
 
         if (error) throw error;
@@ -175,7 +242,7 @@ const ProductFormPage = () => {
 
         toast({
           title: "Product created",
-          description: `${values.name} has been created successfully`,
+          description: `${values.name} has been created successfully and is pending approval`,
         });
       }
 
@@ -315,28 +382,6 @@ const ProductFormPage = () => {
                             {category.name}
                           </SelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Approved">Approved</SelectItem>
-                        <SelectItem value="Rejected">Rejected</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

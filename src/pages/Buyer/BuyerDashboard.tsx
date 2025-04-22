@@ -220,7 +220,7 @@ const BuyerDashboard = () => {
           category:categories(*),
           farmer:profiles(id, name)
         `)
-        .eq("status", "Approved")
+        .eq("status", "Approved") // Using status enum instead of status_id
         .order("created_at", { ascending: false })
         .limit(6);
 
