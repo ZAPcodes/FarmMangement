@@ -120,6 +120,7 @@ const AdminDashboard = () => {
           status:order_status(*)
         `);
       if (ordersError) throw ordersError;
+      console.log("Orders data:", ordersData); // Debug log
       setOrders(ordersData as unknown as OrderWithDetails[]);
 
       // Calculate stats
@@ -244,7 +245,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Approved">Approved</SelectItem>
                     <SelectItem value="Rejected">Rejected</SelectItem>
@@ -303,7 +304,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Orders</SelectItem>
+                    <SelectItem value="all">All Orders</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Processing">Processing</SelectItem>
                     <SelectItem value="Shipped">Shipped</SelectItem>
@@ -360,7 +361,7 @@ const AdminDashboard = () => {
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Roles</SelectItem>
+                    <SelectItem value="all">All Roles</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="Farmer">Farmer</SelectItem>
                     <SelectItem value="Buyer">Buyer</SelectItem>

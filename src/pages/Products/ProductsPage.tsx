@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,8 +33,8 @@ const ProductsPage = () => {
   const [categories, setCategories] = useState<{ category_id: number; name: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [productToDelete, setProductToDelete] = useState<ProductWithDetails | null>(null);
 
@@ -154,8 +153,8 @@ const ProductsPage = () => {
 
   const filteredProducts = products.filter(product => {
     const nameMatch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const categoryMatch = categoryFilter ? product.category_id === parseInt(categoryFilter) : true;
-    const statusMatch = statusFilter ? product.status === statusFilter : true;
+    const categoryMatch = categoryFilter === "all" || product.category_id === parseInt(categoryFilter);
+    const statusMatch = statusFilter === "all" || product.status === statusFilter;
     return nameMatch && categoryMatch && statusMatch;
   });
 
@@ -223,7 +222,7 @@ const ProductsPage = () => {
                   <SelectValue placeholder="All Categories" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Categories</SelectItem>
+                  <SelectItem value="all">All Categories</SelectItem>
                   {categories.map((category) => (
                     <SelectItem key={category.category_id} value={category.category_id.toString()}>
                       {category.name}
@@ -238,7 +237,7 @@ const ProductsPage = () => {
                     <SelectValue placeholder="All Statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="Approved">Approved</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Rejected">Rejected</SelectItem>
