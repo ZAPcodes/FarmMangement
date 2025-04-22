@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -72,7 +71,7 @@ const ProductFormPage = () => {
       price: 0,
       stock: 0,
       image_url: "",
-      category_id: "", // Ensure this is a string
+      category_id: "",
       status: "Pending",
     },
   });
@@ -112,25 +111,24 @@ const ProductFormPage = () => {
 
       if (error) throw error;
 
-      // Convert the price and stock to numbers
       const parsedProduct = {
         ...data,
         price: parseFloat(data.price),
-        stock: parseInt(data.stock),
+        stock: parseInt(data.stock.toString()),
+        category_id: data.category_id?.toString() || "",
       };
 
-      setProduct(parsedProduct);
-
-      // Set default values for the form
       form.reset({
         name: parsedProduct.name,
-        description: parsedProduct.description,
+        description: parsedProduct.description || "",
         price: parsedProduct.price,
         stock: parsedProduct.stock,
         image_url: parsedProduct.image_url || "",
-        category_id: parsedProduct.category_id ? parsedProduct.category_id.toString() : "", // Convert number to string for form
+        category_id: parsedProduct.category_id,
         status: parsedProduct.status as "Approved" | "Pending" | "Rejected" || "Pending",
       });
+
+      setProduct(parsedProduct);
     } catch (error: any) {
       console.error("Error fetching product:", error);
       toast({
@@ -152,16 +150,15 @@ const ProductFormPage = () => {
         price: values.price,
         stock: values.stock,
         image_url: values.image_url,
-        category_id: values.category_id ? parseInt(values.category_id) : null, // Convert string to number, handle potential null
+        category_id: values.category_id ? parseInt(values.category_id) : null,
         status: values.status || "Pending" as ProductStatus,
       };
 
       if (id) {
-        // Update existing product
         const { error } = await supabase
           .from("products")
           .update(formData)
-          .eq("product_id", parseInt(id)); // Ensure product_id is a number
+          .eq("product_id", parseInt(id));
 
         if (error) throw error;
 
@@ -170,10 +167,9 @@ const ProductFormPage = () => {
           description: `${values.name} has been updated successfully`,
         });
       } else {
-        // Create new product
-        const { error } = await supabase.from("products").insert([
-          formData,
-        ]);
+        const { error } = await supabase
+          .from("products")
+          .insert([formData]);
 
         if (error) throw error;
 
