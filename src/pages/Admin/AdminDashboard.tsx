@@ -57,6 +57,19 @@ interface FarmerSalesData {
   } | null;
 }
 
+interface LowStockAlert {
+  alert_id: number;
+  product_id: number;
+  farmer_id: string;
+  product_name: string;
+  current_stock: number;
+  created_at: string;
+  is_read: boolean;
+  farmer?: {
+    name: string;
+  };
+}
+
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -98,7 +111,6 @@ const AdminDashboard = () => {
   const [productFilter, setProductFilter] = useState("all");
   const [orderFilter, setOrderFilter] = useState("all");
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [lowStockProducts, setLowStockProducts] = useState(0);
   const [totalSales, setTotalSales] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
   const [farmerSales, setFarmerSales] = useState<Array<{
@@ -246,9 +258,6 @@ const AdminDashboard = () => {
       // Calculate metrics
       const pendingProducts = productsData?.filter(product => product.status === "Pending").length || 0;
       setPendingApprovals(pendingProducts);
-
-      const lowStock = productsData?.filter(product => product.stock < 10).length || 0;
-      setLowStockProducts(lowStock);
 
       // Fetch total users
       const { count: usersCount, error: usersError } = await supabase
@@ -400,19 +409,9 @@ const AdminDashboard = () => {
   const updateOrderStatus = async (orderId: number, newStatusId: number) => {
     try {
       setIsLoading(true);
-      console.log(`Updating order ${orderId} to status ${newStatusId}`);
+      console.log(`Attempting to update order ${orderId} to status ${newStatusId}`);
 
-      // Log the order details before update
-      const { data: beforeOrder, error: beforeError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('order_id', orderId)
-        .single();
-      
-      if (beforeError) throw beforeError;
-      console.log('Order before update:', beforeOrder);
-
-      // Check order items and their products before update
+      // First, get the current product stock levels
       const { data: orderItems, error: itemsError } = await supabase
         .from('order_items')
         .select(`
@@ -421,32 +420,28 @@ const AdminDashboard = () => {
           product_id,
           quantity,
           price_per_unit,
-          product:products!inner(
+          product:products(
             product_id,
             name,
-            farmer_id
+            farmer_id,
+            stock
           )
         `)
         .eq('order_id', orderId);
 
-      if (itemsError) {
-        console.error('Error fetching order items:', itemsError);
-        throw itemsError;
+      if (itemsError) throw itemsError;
+      
+      if (orderItems && orderItems.length > 0) {
+        console.log('Current product stock levels:', orderItems.map(item => ({
+          product_id: item.product_id,
+          product_name: item.product?.name,
+          current_stock: item.product?.stock,
+          order_quantity: item.quantity,
+          expected_new_stock: item.product?.stock - (newStatusId === 4 ? item.quantity : 0)
+        })));
       }
-      console.log('Order items with products:', orderItems);
 
-      // Calculate expected farmer sales update
-      const farmerTotals = new Map();
-      orderItems?.forEach(item => {
-        const farmerId = item.product?.farmer_id;
-        if (farmerId) {
-          const total = (farmerTotals.get(farmerId) || 0) + (item.price_per_unit * item.quantity);
-          farmerTotals.set(farmerId, total);
-        }
-      });
-      console.log('Expected farmer sales updates:', Object.fromEntries(farmerTotals));
-
-      // Simple direct update
+      // Perform the status update
       const { data: updateData, error: updateError } = await supabase
         .from('orders')
         .update({ status_id: newStatusId })
@@ -454,36 +449,16 @@ const AdminDashboard = () => {
         .select();
 
       if (updateError) throw updateError;
-      console.log('Update response:', updateData);
 
-      // Verify the update
-      const { data: afterOrder, error: afterError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('order_id', orderId)
-        .single();
-      
-      if (afterError) throw afterError;
-      console.log('Order after update:', afterOrder);
+      // Check the updated stock levels
+      if (orderItems && orderItems.length > 0) {
+        const { data: updatedProducts, error: stockError } = await supabase
+          .from('products')
+          .select('product_id, name, stock')
+          .in('product_id', orderItems.map(item => item.product_id));
 
-      // Check farmer_sales after update if status is changed to delivered
-      if (newStatusId === 4) {
-        // Wait a short moment for the trigger to complete
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const { data: farmerSalesData, error: farmerSalesError } = await supabase
-          .from('farmer_sales')
-          .select('*');
-        
-        if (farmerSalesError) throw farmerSalesError;
-        console.log('Farmer sales after delivery:', farmerSalesData);
-
-        // Check if the expected updates were applied
-        if (farmerSalesData?.length === 0) {
-          console.warn('No farmer sales records found. This might indicate an issue with:');
-          console.warn('1. The database trigger not being installed');
-          console.warn('2. The trigger not having proper permissions');
-          console.warn('3. Missing or incorrect relationships between orders, products, and farmers');
+        if (!stockError && updatedProducts) {
+          console.log('Updated product stock levels:', updatedProducts);
         }
       }
 
@@ -501,10 +476,8 @@ const AdminDashboard = () => {
         description: `Order #${orderId} status has been updated to ${STATUS_NAMES[newStatusId]}`,
       });
 
-      // Refresh data after a short delay to allow trigger to complete
-      setTimeout(async () => {
-        await fetchData();
-      }, 1000);
+      // Refresh data to get updated stock levels
+      await fetchData();
 
     } catch (error: any) {
       console.error("Error updating order status:", error);
@@ -581,16 +554,6 @@ const AdminDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{pendingApprovals}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Low Stock Products</CardTitle>
-            <CardDescription>Products with stock less than 10</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{lowStockProducts}</div>
           </CardContent>
         </Card>
       </div>
