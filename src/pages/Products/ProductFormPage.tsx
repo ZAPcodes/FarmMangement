@@ -1,13 +1,21 @@
-
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { Product, Category } from "@/types/database.types";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import {
   Select,
   SelectContent,
@@ -15,90 +23,67 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Camera, Package } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Product,
+  Category,
+  ProductStatus,
+} from "@/types/database.types";
+import { supabase } from "@/integrations/supabase/client";
+import { Package } from "lucide-react";
 
-interface ProductFormData {
-  name: string;
-  price: number | null;
-  stock: number | null;
-  category_id: number | null;
-  description: string;
-  image_url: string;
-}
+const formSchema = z.object({
+  name: z.string().min(2, {
+    message: "Product name must be at least 2 characters.",
+  }),
+  description: z.string().min(10, {
+    message: "Description must be at least 10 characters.",
+  }),
+  price: z.number().min(0.01, {
+    message: "Price must be greater than 0.",
+  }),
+  stock: z.number().min(0, {
+    message: "Stock must be at least 0.",
+  }),
+  image_url: z.string().url({
+    message: "Please enter a valid URL.",
+  }),
+  category_id: z.string().min(1, {
+    message: "Please select a category.",
+  }),
+  status: z.enum(["Approved", "Pending", "Rejected"]).optional(),
+});
 
 const ProductFormPage = () => {
-  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [formData, setFormData] = useState<ProductFormData>({
-    name: "",
-    price: null,
-    stock: null,
-    category_id: null,
-    description: "",
-    image_url: "",
+  const [isLoading, setIsLoading] = useState(true);
+  const [product, setProduct] = useState<Product | null>(null);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      price: 0,
+      stock: 0,
+      image_url: "",
+      category_id: "",
+      status: "Pending",
+    },
   });
 
   useEffect(() => {
+    fetchCategories();
     if (id) {
-      setIsEditing(true);
       fetchProduct(id);
     } else {
-      setIsEditing(false);
-      setFormData({
-        name: "",
-        price: null,
-        stock: null,
-        category_id: null,
-        description: "",
-        image_url: "",
-      });
+      setIsLoading(false);
     }
-    fetchCategories();
   }, [id]);
-
-  const fetchProduct = async (productId: string) => {
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("product_id", parseInt(productId))
-        .single();
-
-      if (error) throw error;
-
-      setFormData({
-        name: data.name,
-        price: data.price,
-        stock: data.stock,
-        category_id: data.category_id,
-        description: data.description || "",
-        image_url: data.image_url || "",
-      });
-    } catch (error: any) {
-      console.error("Error fetching product:", error);
-      toast({
-        title: "Error fetching product",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const fetchCategories = async () => {
     try {
@@ -115,235 +100,257 @@ const ProductFormPage = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  const fetchProduct = async (productId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("product_id", productId)
+        .single();
 
-    if (!profile?.id) {
+      if (error) throw error;
+
+      // Convert the price and stock to numbers
+      const parsedProduct = {
+        ...data,
+        price: parseFloat(data.price),
+        stock: parseInt(data.stock),
+      };
+
+      setProduct(parsedProduct);
+
+      // Set default values for the form
+      form.reset({
+        name: parsedProduct.name,
+        description: parsedProduct.description,
+        price: parsedProduct.price,
+        stock: parsedProduct.stock,
+        image_url: parsedProduct.image_url || "",
+        category_id: parsedProduct.category_id?.toString() || "",
+        status: parsedProduct.status || "Pending",
+      });
+    } catch (error: any) {
+      console.error("Error fetching product:", error);
       toast({
-        title: "Unauthorized",
-        description: "You must be logged in to perform this action.",
+        title: "Error fetching product",
+        description: error.message,
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    const productData = {
-      ...formData,
-      farmer_id: profile.id,
-    };
-
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true);
     try {
-      if (isEditing && id) {
+      const formData = {
+        name: values.name,
+        description: values.description,
+        price: values.price,
+        stock: values.stock,
+        image_url: values.image_url,
+        category_id: parseInt(values.category_id),
+        status: values.status || "Pending",
+      };
+
+      if (id) {
+        // Update existing product
         const { error } = await supabase
           .from("products")
-          .update(productData)
-          .eq("product_id", parseInt(id));
+          .update(formData)
+          .eq("product_id", id);
 
         if (error) throw error;
 
         toast({
           title: "Product updated",
-          description: "Product has been updated successfully!",
+          description: `${values.name} has been updated successfully`,
         });
       } else {
-        const { error } = await supabase.from("products").insert({
-          ...productData,
-          status: "Pending",
-        });
+        // Create new product
+        const { error } = await supabase.from("products").insert([
+          formData,
+        ]);
 
         if (error) throw error;
 
         toast({
           title: "Product created",
-          description: "Product has been created successfully!",
+          description: `${values.name} has been created successfully`,
         });
       }
+
       navigate("/products");
     } catch (error: any) {
-      console.error("Error creating/updating product:", error);
+      console.error("Error submitting form:", error);
       toast({
-        title: isEditing ? "Error updating product" : "Error creating product",
+        title: "Error submitting form",
         description: error.message,
         variant: "destructive",
       });
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center">
-        <Package className="h-6 w-6 mr-2" />
-        <h1 className="text-3xl font-bold text-gray-900">
-          {isEditing ? "Edit Product" : "Add New Product"}
-        </h1>
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
       </div>
+    );
+  }
 
+  return (
+    <div className="container mx-auto py-10">
       <Card>
         <CardHeader>
-          <CardTitle>Product Information</CardTitle>
-          <CardDescription>
-            {isEditing
-              ? "Update your product details below"
-              : "Fill in the details to list your product"}
-          </CardDescription>
+          <CardTitle>{id ? "Edit Product" : "Create New Product"}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name">Product Name</Label>
-                <Input
-                  id="name"
-                  placeholder="Enter product name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="price">Price ($)</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={formData.price || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      price: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="stock">Stock Quantity</Label>
-                <Input
-                  id="stock"
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={formData.stock || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      stock: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select
-                  value={formData.category_id?.toString() || ""}
-                  onValueChange={(value) =>
-                    setFormData({ 
-                      ...formData, 
-                      category_id: value === "none" ? null : parseInt(value) 
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem 
-                        key={category.category_id} 
-                        value={category.category_id.toString()}
-                      >
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Describe your product..."
-                value={formData.description || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                rows={5}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="image">Product Image</Label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Input
-                    id="image_url"
-                    type="text"
-                    placeholder="Image URL (optional)"
-                    value={formData.image_url || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, image_url: e.target.value })
-                    }
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Enter a URL to an image or upload one →
-                  </p>
-                </div>
-                <div className="bg-gray-50 flex items-center justify-center border border-dashed rounded-md h-[120px] relative">
-                  {/* This would be where we'd handle image upload if we implemented it */}
-                  {formData.image_url ? (
-                    <img
-                      src={formData.image_url}
-                      alt="Product preview"
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  ) : (
-                    <div className="text-center p-4">
-                      <Camera className="h-10 w-10 mx-auto text-gray-400" />
-                      <p className="mt-1 text-sm text-gray-500">
-                        Preview will appear here
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/products")}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-t-0 border-gray-300 rounded-full"></div>
-                    {isEditing ? "Updating..." : "Saving..."}
-                  </div>
-                ) : isEditing ? (
-                  "Update Product"
-                ) : (
-                  "Save Product"
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-8"
+            >
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Product Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Product name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Product description"
+                        className="resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex flex-col md:flex-row gap-4">
+                <FormField
+                  control={form.control}
+                  name="price"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>Price</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="0.00"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="stock"
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>Stock</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="image_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Image URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Image URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="category_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.category_id} value={category.category_id.toString()}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="Approved">Approved</SelectItem>
+                        <SelectItem value="Rejected">Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" disabled={isLoading}>
+                {id ? "Update Product" : "Create Product"}
               </Button>
-            </div>
-          </form>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>

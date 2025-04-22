@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,6 +42,8 @@ const BuyerDashboard = () => {
   const [selectedProduct, setSelectedProduct] = useState<ProductWithDetails | null>(null);
   const [rating, setRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState("");
+  const [userRatingCount, setUserRatingCount] = useState(0);
+  const [productAvgRatings, setProductAvgRatings] = useState<Record<number, number>>({});
 
   useEffect(() => {
     if (profile) {
@@ -76,7 +79,7 @@ const BuyerDashboard = () => {
   const fetchBuyerData = async () => {
     setIsLoading(true);
     try {
-      // Fetch featured products - updated to ensure we get the latest products
+      // Fetch featured products
       const { data: productsData, error: productsError } = await supabase
         .from("products")
         .select(`
@@ -92,16 +95,54 @@ const BuyerDashboard = () => {
       
       console.log("Buyer dashboard - Products data:", productsData);
       
-      // Cast the returned data as ProductWithDetails[] since we've updated our type to accept
-      // partial farmer and category objects
-      setFeaturedProducts(productsData as unknown as ProductWithDetails[]);
+      // Fetch product ratings
+      const { data: ratingsData, error: ratingsError } = await supabase
+        .from("ratings")
+        .select("*");
+        
+      if (ratingsError) throw ratingsError;
+      
+      // Calculate average rating for each product
+      const productRatings: Record<number, number[]> = {};
+      ratingsData.forEach((rating) => {
+        if (rating.product_id) {
+          if (!productRatings[rating.product_id]) {
+            productRatings[rating.product_id] = [];
+          }
+          productRatings[rating.product_id].push(rating.rating);
+        }
+      });
+      
+      const avgRatings: Record<number, number> = {};
+      Object.entries(productRatings).forEach(([productId, ratings]) => {
+        const sum = ratings.reduce((a, b) => a + b, 0);
+        avgRatings[parseInt(productId)] = parseFloat((sum / ratings.length).toFixed(1));
+      });
+      
+      setProductAvgRatings(avgRatings);
+      
+      // Count user's ratings
+      const { data: userRatingsData, error: userRatingsError } = await supabase
+        .from("ratings")
+        .select("*")
+        .eq("buyer_id", profile?.id);
+        
+      if (userRatingsError) throw userRatingsError;
+      
+      setUserRatingCount(userRatingsData.length);
+      
+      setFeaturedProducts(productsData as ProductWithDetails[]);
 
       // Fetch buyer's recent orders
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
           *,
-          status:order_status(*)
+          status:order_status(*),
+          order_items:order_items(
+            *,
+            product:products(*)
+          )
         `)
         .eq("buyer_id", profile?.id)
         .order("created_at", { ascending: false })
@@ -109,8 +150,7 @@ const BuyerDashboard = () => {
 
       if (ordersError) throw ordersError;
       
-      // Type assertion to handle the new OrderWithDetails structure
-      setRecentOrders(ordersData as unknown as OrderWithDetails[]);
+      setRecentOrders(ordersData as OrderWithDetails[]);
     } catch (error: any) {
       console.error("Error fetching buyer data:", error);
       toast({
@@ -344,6 +384,8 @@ const BuyerDashboard = () => {
       
       setShowReviewDialog(false);
       
+      // Refresh data to reflect the new rating
+      fetchBuyerData();
     } catch (error: any) {
       console.error("Error submitting review:", error);
       toast({
@@ -423,7 +465,7 @@ const BuyerDashboard = () => {
             <Star className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">5</div>
+            <div className="text-2xl font-bold">{userRatingCount}</div>
             <p className="text-xs text-gray-500 mt-1">Products rated so far</p>
           </CardContent>
         </Card>
@@ -477,7 +519,7 @@ const BuyerDashboard = () => {
                     <span>{product.category?.name || "Uncategorized"}</span>
                     <div className="flex items-center">
                       <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 mr-1" />
-                      <span>4.5</span>
+                      <span>{productAvgRatings[product.product_id] || "No ratings"}</span>
                     </div>
                   </div>
                   

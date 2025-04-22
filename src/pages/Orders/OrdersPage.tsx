@@ -60,23 +60,74 @@ const OrdersPage = () => {
         .select(`
           *,
           buyer:profiles(*),
-          status:order_status(*)
+          status:order_status(*),
+          order_items:order_items(
+            *,
+            product:products(*)
+          )
         `)
         .order('created_at', { ascending: false });
 
       if (profile?.role === "Farmer") {
-        // For farmers, we need to filter orders related to their products
-        // This will be implemented in a different way since there's no direct relationship
-        // For now, we'll show an empty list for farmers until we implement order_items properly
+        // For farmers, we need a more complex query to get orders for their products
+        // First, get the farmer's products
+        const { data: farmerProducts, error: productError } = await supabase
+          .from("products")
+          .select("product_id")
+          .eq("farmer_id", profile.id);
+          
+        if (productError) throw productError;
+        
+        if (farmerProducts && farmerProducts.length > 0) {
+          // Get order items that include these products
+          const productIds = farmerProducts.map(p => p.product_id);
+          
+          // Get orders related to these items
+          const { data: orderItemsData, error: orderItemsError } = await supabase
+            .from("order_items")
+            .select("order_id")
+            .in("product_id", productIds);
+            
+          if (orderItemsError) throw orderItemsError;
+          
+          if (orderItemsData && orderItemsData.length > 0) {
+            const orderIds = [...new Set(orderItemsData.map(item => item.order_id))];
+            
+            // Now get these orders
+            const { data: ordersData, error: ordersError } = await supabase
+              .from("orders")
+              .select(`
+                *,
+                buyer:profiles(*),
+                status:order_status(*),
+                order_items:order_items(
+                  *,
+                  product:products(*)
+                )
+              `)
+              .in("order_id", orderIds)
+              .order('created_at', { ascending: false });
+              
+            if (ordersError) throw ordersError;
+            setOrders(ordersData as OrderWithDetails[] || []);
+          } else {
+            setOrders([]);
+          }
+        } else {
+          setOrders([]);
+        }
       } else if (profile?.role === "Buyer") {
-        query = query.eq("buyer_id", profile.id);
+        // For buyers, just filter by buyer_id
+        const { data, error } = await query.eq("buyer_id", profile.id);
+        if (error) throw error;
+        setOrders(data as OrderWithDetails[] || []);
+      } else if (profile?.role === "Admin") {
+        // Admins see all orders
+        const { data, error } = await query;
+        if (error) throw error;
+        console.log("Orders page - Admin fetched orders:", data);
+        setOrders(data as OrderWithDetails[] || []);
       }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      console.log("Orders page - Fetched orders:", data);
-      setOrders(data as unknown as OrderWithDetails[] || []);
     } catch (error: any) {
       console.error("Error fetching orders:", error);
       toast({
@@ -84,17 +135,21 @@ const OrdersPage = () => {
         description: error.message,
         variant: "destructive",
       });
+      setOrders([]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const filteredOrders = orders.filter(order => {
-    // For now just filter by status
+    // Apply status filter
     const orderStatus = getStatusName(order.status) || '';
     const statusMatch = statusFilter === "all" ? true : orderStatus === statusFilter;
     
-    return statusMatch;
+    // Apply search filter (if implemented)
+    const searchMatch = true; // TODO: Implement search functionality
+    
+    return statusMatch && searchMatch;
   });
 
   const getStatusBadgeColor = (status: string | null) => {

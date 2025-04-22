@@ -108,10 +108,10 @@ const AdminDashboard = () => {
       if (productsError) throw productsError;
       
       const typedProducts = productsData.map(product => {
-        const typedStatus = (product.status || "Pending") as ProductStatus;
+        const status = product.status as ProductStatus || "Pending";
         return {
           ...product,
-          status: typedStatus
+          status
         };
       });
       
@@ -122,17 +122,22 @@ const AdminDashboard = () => {
         .select(`
           *,
           buyer:profiles(*),
-          status:order_status(*)
+          status:order_status(*),
+          order_items:order_items(
+            *,
+            product:products(*)
+          )
         `)
         .order('created_at', { ascending: false });
       
       if (ordersError) throw ordersError;
       
       console.log("Admin dashboard - Orders data:", ordersData);
-      setOrders(ordersData as unknown as OrderWithDetails[] || []);
+      setOrders(ordersData as OrderWithDetails[] || []);
 
       const pending = typedProducts?.filter(product => product.status === "Pending")?.length || 0;
       const lowStock = typedProducts?.filter(product => product.stock < 10)?.length || 0;
+      
       const sales = ordersData?.reduce((acc, order) => acc + (order.total_price || 0), 0) || 0;
 
       setPendingApprovals(pending);
@@ -170,6 +175,8 @@ const AdminDashboard = () => {
         title: "Status updated",
         description: `Product status has been updated to ${newStatus}`,
       });
+
+      fetchData();
     } catch (error: any) {
       console.error("Error updating product status:", error);
       toast({
