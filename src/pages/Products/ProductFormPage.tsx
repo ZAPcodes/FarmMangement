@@ -1,50 +1,107 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ProductWithDetails, ProductStatus } from "@/types/database.types";
+import { Product, Category } from "@/types/database.types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Camera, Package } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { ArrowLeft } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+interface ProductFormData {
+  name: string;
+  price: number | null;
+  stock: number | null;
+  category_id: number | null;
+  description: string;
+  image_url: string;
+}
 
 const ProductFormPage = () => {
-  const { id } = useParams();
-  const isEditing = Boolean(id);
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { profile } = useAuth();
   const { toast } = useToast();
-  
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [stock, setStock] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [categories, setCategories] = useState<{ category_id: number; name: string }[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [formData, setFormData] = useState<ProductFormData>({
+    name: "",
+    price: null,
+    stock: null,
+    category_id: null,
+    description: "",
+    image_url: "",
+  });
 
   useEffect(() => {
-    fetchCategories();
-    if (isEditing && id) {
-      fetchProduct(parseInt(id));
+    if (id) {
+      setIsEditing(true);
+      fetchProduct(id);
+    } else {
+      setIsEditing(false);
+      setFormData({
+        name: "",
+        price: null,
+        stock: null,
+        category_id: null,
+        description: "",
+        image_url: "",
+      });
     }
+    fetchCategories();
   }, [id]);
+
+  const fetchProduct = async (productId: string) => {
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("product_id", productId)
+        .single();
+
+      if (error) throw error;
+
+      setFormData({
+        name: data.name,
+        price: data.price,
+        stock: data.stock,
+        category_id: data.category_id,
+        description: data.description || "",
+        image_url: data.image_url || "",
+      });
+    } catch (error: any) {
+      console.error("Error fetching product:", error);
+      toast({
+        title: "Error fetching product",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const fetchCategories = async () => {
     try {
-      const { data, error } = await supabase
-        .from("categories")
-        .select("category_id, name")
-        .order("name");
-
+      const { data, error } = await supabase.from("categories").select("*");
       if (error) throw error;
       setCategories(data || []);
     } catch (error: any) {
@@ -57,274 +114,233 @@ const ProductFormPage = () => {
     }
   };
 
-  const fetchProduct = async (productId: number) => {
-    try {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .eq("product_id", productId)
-        .single();
-
-      if (error) throw error;
-      
-      if (data) {
-        // Only allow editing if the current user is the farmer who created it
-        if (profile?.id !== data.farmer_id && profile?.role !== 'Admin') {
-          toast({
-            title: "Access denied",
-            description: "You don't have permission to edit this product.",
-            variant: "destructive",
-          });
-          navigate("/products");
-          return;
-        }
-
-        setName(data.name);
-        setDescription(data.description || "");
-        setPrice(data.price.toString());
-        setStock(data.stock.toString());
-        setCategoryId(data.category_id ? data.category_id.toString() : "");
-        setImageUrl(data.image_url || "");
-      }
-    } catch (error: any) {
-      console.error("Error fetching product:", error);
-      toast({
-        title: "Error fetching product",
-        description: error.message,
-        variant: "destructive",
-      });
-      navigate("/products");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!profile) {
+    setIsSubmitting(true);
+
+    if (!profile?.id) {
       toast({
-        title: "Authentication required",
-        description: "Please log in to create or edit products.",
+        title: "Unauthorized",
+        description: "You must be logged in to perform this action.",
         variant: "destructive",
       });
       return;
     }
 
-    try {
-      setIsSaving(true);
-      
-      const productData = {
-        name,
-        description: description || null,
-        price: parseFloat(price),
-        stock: parseInt(stock),
-        category_id: categoryId ? parseInt(categoryId) : null,
-        image_url: imageUrl || null,
-        status: isEditing ? undefined : "Pending" as ProductStatus, // Type cast to ProductStatus
-      };
+    const productData = {
+      ...formData,
+      farmer_id: profile.id,
+    };
 
+    try {
       if (isEditing && id) {
-        // Update existing product
         const { error } = await supabase
           .from("products")
           .update(productData)
-          .eq("product_id", parseInt(id));
+          .eq("product_id", id);
 
         if (error) throw error;
 
         toast({
           title: "Product updated",
-          description: "Your product has been updated successfully.",
+          description: "Product has been updated successfully!",
         });
       } else {
-        // Create new product
-        const { error } = await supabase
-          .from("products")
-          .insert([{ ...productData, farmer_id: profile.id }]);
+        const { error } = await supabase.from("products").insert({
+          ...productData,
+          status: "Pending",
+        });
 
         if (error) throw error;
 
         toast({
           title: "Product created",
-          description: "Your product has been submitted for approval.",
+          description: "Product has been created successfully!",
         });
       }
-
       navigate("/products");
     } catch (error: any) {
-      console.error("Error saving product:", error);
+      console.error("Error creating/updating product:", error);
       toast({
-        title: "Error saving product",
+        title: isEditing ? "Error updating product" : "Error creating product",
         description: error.message,
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
+      setIsSubmitting(false);
     }
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center">
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={() => navigate("/products")}
-          className="mr-4"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            {isEditing ? "Edit Product" : "Add New Product"}
-          </h1>
-          <p className="text-gray-500 mt-1">
-            {isEditing ? "Update your product details" : "Create a new product listing"}
-          </p>
-        </div>
+        <Package className="h-6 w-6 mr-2" />
+        <h1 className="text-3xl font-bold text-gray-900">
+          {isEditing ? "Edit Product" : "Add New Product"}
+        </h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{isEditing ? "Product Details" : "New Product"}</CardTitle>
+          <CardTitle>Product Information</CardTitle>
           <CardDescription>
-            {isEditing 
-              ? "Update your product information below"
-              : "Fill in the details to create a new product"
-            }
+            {isEditing
+              ? "Update your product details below"
+              : "Fill in the details to list your product"}
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="name">Product Name*</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter product name"
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your product"
-                rows={4}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="price">Price ($)*</Label>
+                <Label htmlFor="name">Product Name</Label>
                 <Input
-                  id="price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="0.00"
+                  id="name"
+                  placeholder="Enter product name"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
                   required
                 />
               </div>
-              
+
               <div className="space-y-2">
-                <Label htmlFor="stock">Stock*</Label>
+                <Label htmlFor="price">Price ($)</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={formData.price || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      price: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="stock">Stock Quantity</Label>
                 <Input
                   id="stock"
                   type="number"
                   min="0"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
                   placeholder="0"
+                  value={formData.stock || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      stock: parseInt(e.target.value) || 0,
+                    })
+                  }
                   required
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={formData.category_id?.toString() || "0"}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, category_id: parseInt(value) || null })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">None</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem 
+                        key={category.category_id} 
+                        value={category.category_id.toString()}
+                      >
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem 
-                      key={category.category_id} 
-                      value={category.category_id.toString()}
-                    >
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Describe your product..."
+                value={formData.description || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                rows={5}
+              />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="image">Image URL</Label>
-              <Input
-                id="image"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://..."
-              />
-              {imageUrl && (
-                <div className="mt-2 h-40 w-full bg-gray-100 rounded-md flex items-center justify-center overflow-hidden">
-                  <img
-                    src={imageUrl}
-                    alt={name}
-                    className="h-full w-full object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=Invalid+Image';
-                    }}
+              <Label htmlFor="image">Product Image</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Input
+                    id="image_url"
+                    type="text"
+                    placeholder="Image URL (optional)"
+                    value={formData.image_url || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, image_url: e.target.value })
+                    }
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Enter a URL to an image or upload one →
+                  </p>
                 </div>
-              )}
+                <div className="bg-gray-50 flex items-center justify-center border border-dashed rounded-md h-[120px] relative">
+                  {/* This would be where we'd handle image upload if we implemented it */}
+                  {formData.image_url ? (
+                    <img
+                      src={formData.image_url}
+                      alt="Product preview"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-center p-4">
+                      <Camera className="h-10 w-10 mx-auto text-gray-400" />
+                      <p className="mt-1 text-sm text-gray-500">
+                        Preview will appear here
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </CardContent>
-          
-          <CardFooter className="border-t pt-6 flex justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigate("/products")}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="submit"
-              className="bg-green-600 hover:bg-green-700"
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <>
-                  <span className="animate-spin mr-2">⟳</span>
-                  {isEditing ? "Updating..." : "Creating..."}
-                </>
-              ) : (
-                isEditing ? "Update Product" : "Create Product"
-              )}
-            </Button>
-          </CardFooter>
-        </form>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/products")}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin h-4 w-4 mr-2 border-2 border-t-0 border-gray-300 rounded-full"></div>
+                    {isEditing ? "Updating..." : "Saving..."}
+                  </div>
+                ) : isEditing ? (
+                  "Update Product"
+                ) : (
+                  "Save Product"
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
       </Card>
     </div>
   );

@@ -42,9 +42,11 @@ import {
   AlertTriangle,
   Package,
   User,
+  Check,
+  X,
 } from "lucide-react";
 import { ProductWithDetails, Profile, OrderWithDetails } from "@/types/database.types";
-import { toast } from "@/components/ui/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 
 // Helper function to format dates
 const formatDate = (date: string) => {
@@ -72,6 +74,7 @@ const getStatusName = (status: OrderWithDetails['status']) => {
 
 const AdminDashboard = () => {
   const { profile } = useAuth();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [users, setUsers] = useState<Profile[]>([]);
   const [products, setProducts] = useState<ProductWithDetails[]>([]);
@@ -111,17 +114,20 @@ const AdminDashboard = () => {
       if (productsError) throw productsError;
       setProducts(productsData as ProductWithDetails[]);
 
-      // Fetch orders with proper relationship
+      // Fetch orders with proper relationship - improved query
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
           *,
           buyer:profiles(*),
           status:order_status(*)
-        `);
+        `)
+        .order('created_at', { ascending: false });
+      
       if (ordersError) throw ordersError;
-      console.log("Orders data:", ordersData); // Debug log
-      setOrders(ordersData as unknown as OrderWithDetails[]);
+      
+      console.log("Admin dashboard - Orders data:", ordersData);
+      setOrders(ordersData as unknown as OrderWithDetails[] || []);
 
       // Calculate stats
       const pending = productsData?.filter(product => product.status === "Pending")?.length || 0;
@@ -141,6 +147,79 @@ const AdminDashboard = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Update product status function
+  const updateProductStatus = async (productId: number, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ status: newStatus })
+        .eq("product_id", productId);
+
+      if (error) throw error;
+
+      // Update the local state
+      setProducts(products.map(product => 
+        product.product_id === productId 
+          ? { ...product, status: newStatus } 
+          : product
+      ));
+
+      toast({
+        title: "Status updated",
+        description: `Product status has been updated to ${newStatus}`,
+      });
+    } catch (error: any) {
+      console.error("Error updating product status:", error);
+      toast({
+        title: "Error updating status",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Update order status function
+  const updateOrderStatus = async (orderId: number, newStatusId: number) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status_id: newStatusId })
+        .eq("order_id", orderId);
+
+      if (error) throw error;
+
+      // Fetch the updated order to get the full status object
+      const { data, error: fetchError } = await supabase
+        .from("orders")
+        .select(`
+          *,
+          buyer:profiles(*),
+          status:order_status(*)
+        `)
+        .eq("order_id", orderId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Update the local state
+      setOrders(orders.map(order => 
+        order.order_id === orderId ? (data as unknown as OrderWithDetails) : order
+      ));
+
+      toast({
+        title: "Order status updated",
+        description: `Order status has been updated successfully`,
+      });
+    } catch (error: any) {
+      console.error("Error updating order status:", error);
+      toast({
+        title: "Error updating order status",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -265,6 +344,7 @@ const AdminDashboard = () => {
                       <TableHead>Stock</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Rating</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -279,6 +359,50 @@ const AdminDashboard = () => {
                           <Badge variant="secondary">{product.status}</Badge>
                         </TableCell>
                         <TableCell>{product.avgRating || 0}</TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            {product.status === "Pending" && (
+                              <>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="h-8 w-8 p-0 text-green-600"
+                                  onClick={() => updateProductStatus(product.product_id, "Approved")}
+                                >
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="h-8 w-8 p-0 text-red-600"
+                                  onClick={() => updateProductStatus(product.product_id, "Rejected")}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                            {product.status === "Rejected" && (
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="h-8 w-8 p-0 text-green-600"
+                                onClick={() => updateProductStatus(product.product_id, "Approved")}
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {product.status === "Approved" && (
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="h-8 w-8 p-0 text-red-600"
+                                onClick={() => updateProductStatus(product.product_id, "Rejected")}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -324,6 +448,7 @@ const AdminDashboard = () => {
                       <TableHead>Total Amount</TableHead>
                       <TableHead>Order Date</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -337,11 +462,28 @@ const AdminDashboard = () => {
                           <TableCell>
                             <Badge variant="secondary">{getStatusName(order.status)}</Badge>
                           </TableCell>
+                          <TableCell>
+                            <Select 
+                              onValueChange={(value) => updateOrderStatus(order.order_id, parseInt(value))}
+                              defaultValue={order.status_id?.toString() || "1"}
+                            >
+                              <SelectTrigger className="w-[130px]">
+                                <SelectValue placeholder="Update Status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1">Pending</SelectItem>
+                                <SelectItem value="2">Processing</SelectItem>
+                                <SelectItem value="3">Shipped</SelectItem>
+                                <SelectItem value="4">Delivered</SelectItem>
+                                <SelectItem value="5">Cancelled</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-4 text-gray-500">
+                        <TableCell colSpan={6} className="text-center py-4 text-gray-500">
                           No orders found
                         </TableCell>
                       </TableRow>

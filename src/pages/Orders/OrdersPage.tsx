@@ -61,7 +61,8 @@ const OrdersPage = () => {
           *,
           buyer:profiles(*),
           status:order_status(*)
-        `);
+        `)
+        .order('created_at', { ascending: false });
 
       if (profile?.role === "Farmer") {
         // For farmers, we need to filter orders related to their products
@@ -74,7 +75,7 @@ const OrdersPage = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      console.log("Fetched orders:", data);
+      console.log("Orders page - Fetched orders:", data);
       setOrders(data as unknown as OrderWithDetails[] || []);
     } catch (error: any) {
       console.error("Error fetching orders:", error);

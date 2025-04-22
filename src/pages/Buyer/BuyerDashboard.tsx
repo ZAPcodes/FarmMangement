@@ -76,7 +76,7 @@ const BuyerDashboard = () => {
   const fetchBuyerData = async () => {
     setIsLoading(true);
     try {
-      // Fetch featured products
+      // Fetch featured products - updated to ensure we get the latest products
       const { data: productsData, error: productsError } = await supabase
         .from("products")
         .select(`
@@ -89,6 +89,8 @@ const BuyerDashboard = () => {
         .limit(6);
 
       if (productsError) throw productsError;
+      
+      console.log("Buyer dashboard - Products data:", productsData);
       
       // Cast the returned data as ProductWithDetails[] since we've updated our type to accept
       // partial farmer and category objects
