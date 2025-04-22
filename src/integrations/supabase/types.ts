@@ -311,6 +311,35 @@ export type Database = {
           },
         ]
       }
+      farmer_sales: {
+        Row: {
+          id: number
+          farmer_id: string
+          total_amount: number
+          last_updated: string
+        }
+        Insert: {
+          id?: number
+          farmer_id: string
+          total_amount?: number
+          last_updated?: string
+        }
+        Update: {
+          id?: number
+          farmer_id?: string
+          total_amount?: number
+          last_updated?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "farmer_sales_farmer_id_fkey"
+            columns: ["farmer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -319,8 +348,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      product_status: "Approved" | "Pending" | "Rejected"
-      user_role: "Farmer" | "Buyer" | "Admin"
+      product_status: "Pending" | "Approved" | "Rejected"
+      user_role: "Admin" | "Farmer" | "Buyer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -436,8 +465,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      product_status: ["Approved", "Pending", "Rejected"],
-      user_role: ["Farmer", "Buyer", "Admin"],
+      product_status: ["Pending", "Approved", "Rejected"],
+      user_role: ["Admin", "Farmer", "Buyer"],
     },
   },
 } as const

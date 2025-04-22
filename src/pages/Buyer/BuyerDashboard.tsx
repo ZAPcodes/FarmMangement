@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,9 +28,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
+import { STATUS_NAMES } from '@/constants/orderStatus';
 
 const BuyerDashboard = () => {
   const { profile } = useAuth();
+  const { toast } = useToast();
   const [featuredProducts, setFeaturedProducts] = useState<ProductWithDetails[]>([]);
   const [recentOrders, setRecentOrders] = useState<OrderWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +46,8 @@ const BuyerDashboard = () => {
   const [reviewComment, setReviewComment] = useState("");
   const [userRatingCount, setUserRatingCount] = useState(0);
   const [productAvgRatings, setProductAvgRatings] = useState<Record<number, number>>({});
+  const [orders, setOrders] = useState<OrderWithDetails[]>([]);
+  const [orderFilter, setOrderFilter] = useState("all");
 
   useEffect(() => {
     if (profile) {
@@ -64,6 +68,135 @@ const BuyerDashboard = () => {
       }
     }
   }, [profile]);
+
+  const fetchOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          status:order_status(status_id, name),
+          order_items(
+            quantity,
+            price_per_unit,
+            product:products(
+              name,
+              price,
+              image_url
+            )
+          )
+        `)
+        .eq('buyer_id', profile?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      console.log("Buyer Dashboard - All Orders:", data);
+      console.log("Detailed Order Status Information:");
+      data?.forEach(order => {
+        console.log(`Order #${order.order_id}:`, {
+          status_id: order.status_id,
+          status: order.status,
+          raw_order: order
+        });
+      });
+
+      setOrders(data || []);
+    } catch (error: any) {
+      console.error('Error fetching orders:', error);
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.id) {
+      fetchOrders();
+
+      // Subscribe to real-time updates for orders
+      const ordersSubscription = supabase
+        .channel('orders_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `buyer_id=eq.${profile.id}`
+          },
+          async (payload) => {
+            if (payload.eventType === 'UPDATE') {
+              console.log("Buyer Dashboard - Received order update payload:", payload);
+              
+              // Fetch the complete updated order with all relations
+              const { data: updatedOrder, error } = await supabase
+                .from("orders")
+                .select(`
+                  *,
+                  status:order_status(status_id, name),
+                  order_items(
+                    quantity,
+                    price_per_unit,
+                    product:products(
+                      name,
+                      price,
+                      image_url
+                    )
+                  )
+                `)
+                .eq("order_id", payload.new.order_id)
+                .single();
+
+              console.log("Buyer Dashboard - Updated order details:", {
+                order_id: updatedOrder?.order_id,
+                status_id: updatedOrder?.status_id,
+                status: updatedOrder?.status,
+                complete_order: updatedOrder
+              });
+
+              if (!error && updatedOrder) {
+                setOrders(prevOrders =>
+                  prevOrders.map(order =>
+                    order.order_id === updatedOrder.order_id ? updatedOrder : order
+                  )
+                );
+                
+                // Show toast notification for status update
+                const newStatus = updatedOrder.status?.name || STATUS_NAMES[updatedOrder.status_id] || "Unknown";
+                toast({
+                  title: "Order Status Updated",
+                  description: `Order #${updatedOrder.order_id} is now ${newStatus}`,
+                });
+
+                // Log current state of all orders after update
+                console.log("Current state of all orders after update:");
+                setOrders(prevOrders => {
+                  const newOrders = prevOrders.map(order =>
+                    order.order_id === updatedOrder.order_id ? updatedOrder : order
+                  );
+                  newOrders.forEach(order => {
+                    console.log(`Order #${order.order_id}:`, {
+                      status_id: order.status_id,
+                      status: order.status,
+                      raw_order: order
+                    });
+                  });
+                  return newOrders;
+                });
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        ordersSubscription.unsubscribe();
+      };
+    }
+  }, [profile?.id]);
 
   // Save cart to local storage whenever it changes
   useEffect(() => {
@@ -396,10 +529,23 @@ const BuyerDashboard = () => {
     }
   };
 
-  const getStatusName = (status: OrderWithDetails['status']) => {
-    if (!status) return "Processing";
-    if (typeof status === 'string') return status;
-    return status.name || "Processing";
+  const getStatusName = (statusId: number) => {
+    return STATUS_NAMES[statusId] || 'Unknown';
+  };
+
+  const getStatusStyle = (statusName: string) => {
+    switch (statusName) {
+      case "Delivered":
+        return "bg-green-100 text-green-800";
+      case "Confirmed":
+        return "bg-blue-100 text-blue-800";
+      case "Shipped":
+        return "bg-indigo-100 text-indigo-800";
+      case "Cancelled":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-yellow-100 text-yellow-800";
+    }
   };
 
   if (isLoading) {
@@ -568,7 +714,6 @@ const BuyerDashboard = () => {
                     <th className="pb-3 text-sm font-medium">Date</th>
                     <th className="pb-3 text-sm font-medium">Total</th>
                     <th className="pb-3 text-sm font-medium">Status</th>
-                    <th className="pb-3 text-sm font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -581,17 +726,10 @@ const BuyerDashboard = () => {
                       <td className="py-3 text-sm">${order.total_price}</td>
                       <td className="py-3 text-sm">
                         <span className={`px-2 py-1 rounded-full text-xs ${
-                          getStatusName(order.status) === "Delivered" ? "bg-green-100 text-green-800" : 
-                          getStatusName(order.status) === "Confirmed" ? "bg-blue-100 text-blue-800" : 
-                          getStatusName(order.status) === "Shipped" ? "bg-indigo-100 text-indigo-800" :
-                          getStatusName(order.status) === "Cancelled" ? "bg-red-100 text-red-800" :
-                          "bg-yellow-100 text-yellow-800"
+                          getStatusStyle(getStatusName(order.status_id))
                         }`}>
-                          {getStatusName(order.status)}
+                          {getStatusName(order.status_id)}
                         </span>
-                      </td>
-                      <td className="py-3 text-sm text-right">
-                        <Button variant="ghost" size="sm">View</Button>
                       </td>
                     </tr>
                   ))}

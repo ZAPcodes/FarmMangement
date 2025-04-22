@@ -1,4 +1,3 @@
-
 import { Database } from "@/integrations/supabase/types";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -10,6 +9,7 @@ export type OrderStatus = Database["public"]["Tables"]["order_status"]["Row"];
 export type Rating = Database["public"]["Tables"]["ratings"]["Row"];
 export type Review = Database["public"]["Tables"]["reviews"]["Row"];
 export type LogActivity = Database["public"]["Tables"]["log_activity"]["Row"];
+export type FarmerSales = Database["public"]["Tables"]["farmer_sales"]["Row"];
 
 export type ProductStatus = Database["public"]["Enums"]["product_status"];
 export type UserRole = Database["public"]["Enums"]["user_role"];
@@ -31,4 +31,17 @@ export type OrderWithDetails = Order & {
   // so we make them optional
   product?: Partial<Product>;
   total_amount?: number;
+};
+
+export type Tables = {
+  categories: Category;
+  profiles: Profile;
+  products: Product;
+  orders: Order;
+  order_items: OrderItem;
+  order_status: OrderStatus;
+  ratings: Rating;
+  reviews: Review;
+  log_activity: LogActivity;
+  farmer_sales: FarmerSales;
 };

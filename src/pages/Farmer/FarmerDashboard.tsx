@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,53 +16,110 @@ import {
   Package, 
   TrendingUp, 
   AlertTriangle,
-  Plus 
+  Plus,
+  DollarSign,
+  ShoppingBag,
+  Star
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { ProductWithDetails } from "@/types/database.types";
-import { toast } from "@/components/ui/use-toast";
+import { useToast } from "@/components/ui/use-toast";
+
+interface FarmerSalesData {
+  id: number;
+  farmer_id: string;
+  total_amount: number;
+  last_updated: string;
+}
 
 const FarmerDashboard = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [products, setProducts] = useState<ProductWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalSales, setTotalSales] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
   const [pendingProducts, setPendingProducts] = useState(0);
   const [lowStockProducts, setLowStockProducts] = useState<ProductWithDetails[]>([]);
+  const [avgRating, setAvgRating] = useState(0);
 
   useEffect(() => {
     if (profile) {
       fetchFarmerData();
+
+      // Subscribe to real-time updates for farmer_sales
+      const salesSubscription = supabase
+        .channel('farmer_sales_changes')
+        .on<FarmerSalesData>(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'farmer_sales',
+            filter: `farmer_id=eq.${profile.id}`
+          },
+          (payload) => {
+            console.log('Received farmer sales update:', payload);
+            if (payload.eventType === 'UPDATE') {
+              setTotalSales(payload.new.total_amount || 0);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        salesSubscription.unsubscribe();
+      };
     }
   }, [profile]);
 
   const fetchFarmerData = async () => {
+    if (!profile) return;
+    
     setIsLoading(true);
     try {
+      // Fetch farmer's sales with explicit typing
+      const { data: salesData, error: salesError } = await supabase
+        .from('farmer_sales')
+        .select<'farmer_sales', FarmerSalesData>('*')
+        .eq('farmer_id', profile.id)
+        .single();
+
+      if (salesError && salesError.code !== 'PGRST116') { // PGRST116 is "not found" error
+        throw salesError;
+      }
+
+      setTotalSales(salesData?.total_amount || 0);
+
       // Fetch farmer's products
       const { data: productsData, error: productsError } = await supabase
         .from("products")
         .select(`
           *,
-          category:categories(*)
+          category:categories(*),
+          ratings(rating)
         `)
-        .eq("farmer_id", profile?.id);
+        .eq("farmer_id", profile.id);
 
       if (productsError) throw productsError;
 
-      setProducts(productsData || []);
-      setTotalProducts(productsData?.length || 0);
+      setProducts(productsData as ProductWithDetails[]);
+      setTotalProducts(productsData.length);
       setPendingProducts(productsData?.filter(p => p.status === "Pending").length || 0);
       setLowStockProducts(productsData?.filter(p => p.stock < 10) || []);
 
-      // Fetch total sales (simplified version - in reality, would calculate from orders)
-      setTotalSales(
-        productsData?.reduce((acc, curr) => {
-          // Mock sales calculation - in a real app, this would come from actual sales data
-          return acc + (curr.price * 5); // Assuming each product has sold 5 units on average
-        }, 0) || 0
+      // Calculate average rating across all products
+      const allRatings = productsData.flatMap(product => 
+        product.ratings?.map(r => r.rating) || []
       );
+      
+      const avgRating = allRatings.length > 0
+        ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length
+        : 0;
+      
+      setAvgRating(Number(avgRating.toFixed(1)));
+
     } catch (error: any) {
       console.error("Error fetching farmer data:", error);
       toast({
@@ -102,15 +158,15 @@ const FarmerDashboard = () => {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-            <CreditCard className="h-4 w-4 text-gray-500" />
+            <DollarSign className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${totalSales.toFixed(2)}</div>
-            <p className="text-xs text-gray-500 mt-1">+12% from last month</p>
+            <p className="text-xs text-gray-500 mt-1">Lifetime earnings</p>
           </CardContent>
         </Card>
         
@@ -129,12 +185,12 @@ const FarmerDashboard = () => {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Rating</CardTitle>
-            <TrendingUp className="h-4 w-4 text-gray-500" />
+            <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
+            <Star className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">4.8</div>
-            <p className="text-xs text-gray-500 mt-1">Based on 24 reviews</p>
+            <div className="text-2xl font-bold">{avgRating}</div>
+            <p className="text-xs text-gray-500 mt-1">Across all products</p>
           </CardContent>
         </Card>
         
@@ -283,6 +339,52 @@ const FarmerDashboard = () => {
             <div className="text-center py-6 text-gray-500">
               <p>No products found. Add your first product!</p>
               <Button className="mt-4 bg-green-600 hover:bg-green-700">Add Product</Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Products list */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Your Products</CardTitle>
+          <CardDescription>Manage your product listings</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {products.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {products.map((product) => (
+                <div key={product.product_id} className="border rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="font-medium">{product.name}</h3>
+                      <p className="text-sm text-gray-500">{product.category?.name}</p>
+                    </div>
+                    <span className="text-green-600 font-medium">
+                      ${product.price}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center mt-4">
+                    <span className="text-sm text-gray-500">
+                      Stock: {product.stock}
+                    </span>
+                    <Link to={`/products/${product.product_id}/edit`}>
+                      <Button variant="outline" size="sm">
+                        Edit
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-gray-500">
+              <p>No products listed yet. Start selling by adding your first product!</p>
+              <Link to="/products/new">
+                <Button className="mt-4 bg-green-600 hover:bg-green-700">
+                  Add New Product
+                </Button>
+              </Link>
             </div>
           )}
         </CardContent>

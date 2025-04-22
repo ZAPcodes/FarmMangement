@@ -47,6 +47,16 @@ import {
 import { ProductWithDetails, Profile, OrderWithDetails, ProductStatus } from "@/types/database.types";
 import { useToast } from "@/components/ui/use-toast";
 
+interface FarmerSalesData {
+  id: number;
+  farmer_id: string;
+  total_amount: number;
+  last_updated: string;
+  profiles: {
+    name: string;
+  } | null;
+}
+
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -62,10 +72,19 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const getStatusName = (status: OrderWithDetails['status']) => {
-  if (!status) return "Unknown";
-  if (typeof status === 'string') return status;
-  return status.name || "Unknown";
+const STATUS_NAMES = {
+  1: "Pending",
+  2: "Confirmed",
+  3: "Shipped",
+  4: "Delivered",
+  5: "Cancelled"
+};
+
+const getStatusName = (status: any) => {
+  if (!status) return STATUS_NAMES[1];
+  if (typeof status === 'number') return STATUS_NAMES[status];
+  if (status.status_id) return STATUS_NAMES[status.status_id];
+  return STATUS_NAMES[1];
 };
 
 const AdminDashboard = () => {
@@ -82,67 +101,160 @@ const AdminDashboard = () => {
   const [lowStockProducts, setLowStockProducts] = useState(0);
   const [totalSales, setTotalSales] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
+  const [farmerSales, setFarmerSales] = useState<Array<{
+    farmer_id: string;
+    farmer_name: string;
+    total_amount: number;
+    last_updated: string;
+  }>>([]);
+
+  // Add a function to get status ID mapping
+  const STATUS_MAP = {
+    PENDING: 1,
+    PROCESSING: 2,
+    SHIPPED: 3,
+    DELIVERED: 4,
+    CANCELLED: 5
+  };
 
   useEffect(() => {
     fetchData();
+
+    // Subscribe to real-time updates for orders
+    const ordersSubscription = supabase
+      .channel('orders_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders'
+        },
+        async (payload) => {
+          if (payload.eventType === 'UPDATE') {
+            // Fetch the complete updated order with all relations
+            const { data: updatedOrder, error } = await supabase
+              .from("orders")
+              .select(`
+                *,
+                buyer:profiles(id, name, email),
+                status:order_status(status_id, name),
+                order_items(
+                  quantity,
+                  price_per_unit,
+                  product:products(
+                    name,
+                    price
+                  )
+                )
+              `)
+              .eq("order_id", payload.new.order_id)
+              .single();
+
+            if (!error && updatedOrder) {
+              setOrders(prevOrders =>
+                prevOrders.map(order =>
+                  order.order_id === updatedOrder.order_id ? updatedOrder : order
+                )
+              );
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to real-time updates for total_sales
+    const totalSalesSubscription = supabase
+      .channel('total_sales_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'total_sales'
+        },
+        (payload) => {
+          if (payload.eventType === 'UPDATE') {
+            setTotalSales(payload.new.total_amount || 0);
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to real-time updates for farmer_sales
+    const farmerSalesSubscription = supabase
+      .channel('farmer_sales_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'farmer_sales'
+        },
+        async () => {
+          // Refetch all farmer sales when any change occurs
+          await fetchFarmerSales();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      ordersSubscription.unsubscribe();
+      totalSalesSubscription.unsubscribe();
+      farmerSalesSubscription.unsubscribe();
+    };
   }, []);
+
+  const fetchFarmerSales = async () => {
+    try {
+      const { data: salesData, error: salesError } = await supabase
+        .from('farmer_sales')
+        .select('total_amount');
+
+      if (salesError) throw salesError;
+
+      // Calculate total sales across all farmers
+      const totalFarmerSales = salesData?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0;
+      setTotalSales(totalFarmerSales);
+
+    } catch (error: any) {
+      console.error('Error fetching farmer sales:', error);
+      toast({
+        title: 'Error fetching sales data',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const { data: usersData, error: usersError } = await supabase
-        .from("profiles")
-        .select("*");
-      
-      if (usersError) throw usersError;
-      setUsers(usersData as Profile[]);
-      setTotalUsers(usersData?.length || 0);
-
-      const { data: productsData, error: productsError } = await supabase
-        .from("products")
-        .select(`
-          *,
-          category:categories(*),
-          farmer:profiles(*)
-        `);
-      if (productsError) throw productsError;
-      
-      const typedProducts = productsData.map(product => {
-        const status = product.status as ProductStatus || "Pending";
-        return {
-          ...product,
-          status
-        };
-      });
-      
-      setProducts(typedProducts as ProductWithDetails[]);
-
+      // Fetch orders without complex joins
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select(`
-          *,
-          buyer:profiles(*),
-          status:order_status(*),
-          order_items:order_items(
-            *,
-            product:products(*)
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (ordersError) throw ordersError;
-      
-      console.log("Admin dashboard - Orders data:", ordersData);
-      setOrders(ordersData as OrderWithDetails[] || []);
 
-      const pending = typedProducts?.filter(product => product.status === "Pending")?.length || 0;
-      const lowStock = typedProducts?.filter(product => product.stock < 10)?.length || 0;
-      
-      const sales = ordersData?.reduce((acc, order) => acc + (order.total_price || 0), 0) || 0;
+      // Fetch order items separately if needed
+      const { data: orderItemsData, error: itemsError } = await supabase
+        .from("order_items")
+        .select('*');
 
-      setPendingApprovals(pending);
-      setLowStockProducts(lowStock);
-      setTotalSales(sales);
+      if (itemsError) throw itemsError;
+
+      // Manually combine the data
+      const ordersWithItems = ordersData?.map(order => ({
+        ...order,
+        order_items: orderItemsData?.filter(item => item.order_id === order.order_id) || []
+      }));
+
+      setOrders(ordersWithItems || []);
+
+      // Update other state as needed
+      setPendingApprovals(ordersWithItems?.filter(order => order.status_id === 1).length || 0);
 
     } catch (error: any) {
       console.error("Error fetching data:", error);
@@ -187,42 +299,104 @@ const AdminDashboard = () => {
     }
   };
 
+  // First, let's add a function to check if we have admin access
+  const checkAdminAccess = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+        
+      return profile?.role === 'Admin';
+    } catch (error) {
+      console.error('Error checking admin access:', error);
+      return false;
+    }
+  };
+
   const updateOrderStatus = async (orderId: number, newStatusId: number) => {
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status_id: newStatusId })
-        .eq("order_id", orderId);
+      setIsLoading(true);
 
-      if (error) throw error;
+      // For delivered status (4), we need to handle it in steps
+      if (newStatusId === 4) {
+        // First get the current order status
+        const { data: currentOrder, error: fetchError } = await supabase
+          .from('orders')
+          .select('status_id')
+          .eq('order_id', orderId)
+          .single();
 
-      const { data, error: fetchError } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          buyer:profiles(*),
-          status:order_status(*)
-        `)
-        .eq("order_id", orderId)
-        .single();
+        if (fetchError) throw fetchError;
 
-      if (fetchError) throw fetchError;
+        // If already delivered, don't proceed
+        if (currentOrder?.status_id === 4) {
+          toast({
+            title: "Order already delivered",
+            description: "This order is already marked as delivered.",
+            variant: "destructive",
+          });
+          return;
+        }
 
-      setOrders(orders.map(order => 
-        order.order_id === orderId ? (data as unknown as OrderWithDetails) : order
-      ));
+        // Update using a direct update without any joins
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({ status_id: newStatusId })
+          .eq('order_id', orderId);
+
+        if (updateError) throw updateError;
+      } else {
+        // For non-delivered statuses, check if it was previously delivered
+        const { data: currentOrder, error: fetchError } = await supabase
+          .from('orders')
+          .select('status_id')
+          .eq('order_id', orderId)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // Update the status
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({ status_id: newStatusId })
+          .eq('order_id', orderId);
+
+        if (updateError) throw updateError;
+      }
+
+      // Update local state
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.order_id === orderId 
+            ? { ...order, status_id: newStatusId }
+            : order
+        )
+      );
 
       toast({
-        title: "Order status updated",
-        description: `Order status has been updated successfully`,
+        title: "Status updated",
+        description: `Order #${orderId} status has been updated to ${STATUS_NAMES[newStatusId]}`,
       });
+
+      // Wait a moment for the trigger to complete, then refresh data
+      setTimeout(async () => {
+        await fetchData();
+      }, 1000);
+
     } catch (error: any) {
       console.error("Error updating order status:", error);
       toast({
-        title: "Error updating order status",
-        description: error.message,
+        title: "Error updating status",
+        description: error.message || "Failed to update order status",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -302,6 +476,16 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Total Farmer Sales</CardTitle>
+          <CardDescription>Combined sales across all farmers</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold">{formatCurrency(totalSales)}</div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="products" className="space-y-4">
         <TabsList>
@@ -448,7 +632,6 @@ const AdminDashboard = () => {
                       <TableHead>Total Amount</TableHead>
                       <TableHead>Order Date</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -460,19 +643,21 @@ const AdminDashboard = () => {
                           <TableCell>{formatCurrency(order.total_price || 0)}</TableCell>
                           <TableCell>{formatDate(order.created_at)}</TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{getStatusName(order.status)}</Badge>
-                          </TableCell>
-                          <TableCell>
                             <Select 
-                              onValueChange={(value) => updateOrderStatus(order.order_id, parseInt(value))}
-                              defaultValue={order.status_id?.toString() || "1"}
+                              value={order.status_id?.toString()}
+                              onValueChange={(value) => {
+                                console.log("Selected status value:", value);
+                                updateOrderStatus(order.order_id, parseInt(value));
+                              }}
                             >
                               <SelectTrigger className="w-[130px]">
-                                <SelectValue placeholder="Update Status" />
+                                <SelectValue>
+                                  {getStatusName(order.status_id)}
+                                </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="1">Pending</SelectItem>
-                                <SelectItem value="2">Processing</SelectItem>
+                                <SelectItem value="2">Confirmed</SelectItem>
                                 <SelectItem value="3">Shipped</SelectItem>
                                 <SelectItem value="4">Delivered</SelectItem>
                                 <SelectItem value="5">Cancelled</SelectItem>
@@ -483,7 +668,7 @@ const AdminDashboard = () => {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-4 text-gray-500">
+                        <TableCell colSpan={5} className="text-center py-4 text-gray-500">
                           No orders found
                         </TableCell>
                       </TableRow>
